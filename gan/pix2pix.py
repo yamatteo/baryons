@@ -18,11 +18,19 @@ from visualization import heatmap_plot, select_slice
 
 
 def main():
-    print(f"{sys.path =}")
-    logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+    logging.basicConfig(
+        filename="debug.log",
+        filemode="w",
+        format='%(levelname)s: %(message)s',
+        level=logging.DEBUG,
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger().addHandler(console)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=str, default=os.path.join(os.path.curdir, 'data'), help="folder where data is")
+    parser.add_argument("--root", type=str, default=os.path.join(os.path.curdir, 'data'), help="folder where data/ is")
     parser.add_argument("--sim_name", type=str, default='TNG300-1')
     parser.add_argument("--mass_range", type=str, default='MASS_1.00e+12_5.00e+12_MSUN')
     parser.add_argument("--n_voxel", type=int, default=256, help="number of voxels set for images")
@@ -43,7 +51,7 @@ def main():
                         help="interval between sampling of images from generators")
     parser.add_argument("--checkpoint_interval", type=int, default=-1, help="interval between model checkpoints")
     opt = parser.parse_args()
-    print(opt)
+    logging.info(opt)
 
     os.makedirs("images/%s" % opt.dataset_name, exist_ok=True)
     os.makedirs("saved_models/%s" % opt.dataset_name, exist_ok=True)
