@@ -19,7 +19,7 @@ from gan.dynamic_models import Discriminator, Generator, weights_init_normal
 from visualization import heatmap_plot, select_slice
 
 
-def setup(channels, n_voxel, dataset_name, patch_side, generator_depth, lr, b1, b2, sim_name, mass_range, batch_size,
+def setup(channels, n_voxel, patch_side, generator_depth, lr, b1, b2, sim_name, mass_range, batch_size,
           n_cpu, skip_to_epoch=None, **kwargs):
     assert n_voxel % patch_side == 0, "parameter n_voxel should be a multiple of parameter patch_side"
     logging.info('Setting up gan...')
@@ -53,12 +53,12 @@ def setup(channels, n_voxel, dataset_name, patch_side, generator_depth, lr, b1, 
         discriminator.apply(weights_init_normal)
     else:
         # Load pretrained models
-        # TODO: set this right
+        dataset_name = f"{sim_name}__{mass_range}__{n_voxel}"
         generator.load_state_dict(
-            torch.load("saved_models/%s/generator_%d.pth" % (dataset_name, skip_to_epoch))
+            torch.load(f"saved_models/{dataset_name}/generator_{skip_to_epoch}.pth")
         )
         discriminator.load_state_dict(
-            torch.load("saved_models/%s/discriminator_%d.pth" % (dataset_name, skip_to_epoch))
+            torch.load(f"saved_models/{dataset_name}/discriminator_{skip_to_epoch}.pth")
         )
 
     # Optimizers
@@ -135,6 +135,7 @@ def run(opt):
     console.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(console)
     logging.getLogger('matplotlib.font_manager').disabled = True
+    logging.getLogger('parso.python.diff').disabled = True
 
     logging.info(opt)
     gan = setup(**vars(opt))
@@ -255,9 +256,9 @@ def run(opt):
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             # Save model checkpoints TODO
-            torch.save(gan.generator.state_dict(), "saved_models/%s/generator_%d.pth" % (opt.dataset_name, epoch))
-            torch.save(gan.discriminator.state_dict(),
-                       "saved_models/%s/discriminator_%d.pth" % (opt.dataset_name, epoch))
+            dataset_name = f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}"
+            torch.save(gan.generator.state_dict(), f"saved_models/{dataset_name}/generator_{epoch}.pth")
+            torch.save(gan.discriminator.state_dict(), f"saved_models/{dataset_name}/discriminator_{epoch}.pth")
 
 
 if __name__ == '__main__':
