@@ -1,3 +1,5 @@
+import logging
+
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
@@ -95,15 +97,23 @@ class UNet(nn.Module):
         pool_4 = self.pool_4(down_4)  # -> [1, 32, 8, 8, 8]
 
         down_5 = self.down_5(pool_4)  # -> [1, 64, 8, 8, 8]
+        logging.debug(f"{down_5.shape = }")
         pool_5 = self.pool_5(down_5)  # -> [1, 64, 4, 4, 4]
+        logging.debug(f"{pool_5.shape = }")
+
 
         # Bridge
         bridge = self.bridge(pool_5)  # -> [1, 128, 4, 4, 4]
+        logging.debug(f"{bridge.shape = }")
 
         # Up sampling
         trans_1 = self.trans_1(bridge)  # -> [1, 128, 8, 8, 8]
+        logging.debug(f"{trans_1.shape = }")
         concat_1 = torch.cat([trans_1, down_5], dim=1)  # -> [1, 192, 8, 8, 8]
+        logging.debug(f"{concat_1.shape = }")
         up_1 = self.up_1(concat_1)  # -> [1, 64, 8, 8, 8]
+        logging.debug(f"{up_1.shape = }")
+
 
         trans_2 = self.trans_2(up_1)  # -> [1, 64, 16, 16, 16]
         concat_2 = torch.cat([trans_2, down_4], dim=1)  # -> [1, 96, 16, 16, 16]

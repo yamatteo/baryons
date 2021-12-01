@@ -13,7 +13,8 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from gan.dataset import Dataset3D
-from gan.models import UNet, Discriminator, weights_init_normal
+from gan.models import UNet, Discriminator
+from gan.dynamic_models import Generator, weights_init_normal
 from visualization import heatmap_plot, select_slice
 
 
@@ -28,20 +29,22 @@ def main():
     console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(console)
+    logging.getLogger('matplotlib.font_manager').disabled = True
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=str, default=os.path.join(os.path.curdir, 'data'), help="folder where data/ is")
     parser.add_argument("--sim_name", type=str, default='TNG300-1')
     parser.add_argument("--mass_range", type=str, default='MASS_1.00e+12_5.00e+12_MSUN')
-    parser.add_argument("--n_voxel", type=int, default=256, help="number of voxels set for images")
+    parser.add_argument("--n_voxel", type=int, default=128, help="number of voxels set for images")
     parser.add_argument("--epoch", type=int, default=0, help="epoch to start training from")
-    parser.add_argument("--n_epochs", type=int, default=1, help="number of epochs of training")
+    parser.add_argument("--n_epochs", type=int, default=2, help="number of epochs of training")
     parser.add_argument("--dataset_name", type=str, default="facades", help="name of the dataset")
-    parser.add_argument("--batch_size", type=int, default=1, help="size of the batches")
+    parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
     parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
     parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--decay_epoch", type=int, default=100, help="epoch from which to start lr decay")
+    parser.add_argument("--depth", type=int, default=5, help="depth of the generator architecture")
     parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     # parser.add_argument("--img_height", type=int, default=256, help="size of image height")
     # parser.add_argument("--img_width", type=int, default=256, help="size of image width")
@@ -57,7 +60,9 @@ def main():
     os.makedirs("saved_models/%s" % opt.dataset_name, exist_ok=True)
 
     cuda = True if torch.cuda.is_available() else False
-    print(f"{cuda = }")
+    cuda = False
+    if cuda is False:
+        logging.warning("Running without cuda")
 
     # Loss functions
     criterion_gan = torch.nn.MSELoss()
@@ -74,7 +79,8 @@ def main():
     patch = (opt.channels, opt.n_voxel // opt.patch_side, opt.n_voxel // opt.patch_side, opt.n_voxel // opt.patch_side)
 
     # Initialize generator and discriminator
-    generator = UNet(in_dim=opt.channels, out_dim=opt.channels, num_filters=4)
+    # generator = UNet(in_dim=opt.channels, out_dim=opt.channels, num_filters=4)
+    generator = Generator(in_channels=opt.channels, out_channels=opt.channels, num_filters=4, depth=opt.depth)
     # generator = UNet(in_channels=opt.channels, out_channels=opt.channels)
     discriminator = Discriminator(in_channels=opt.channels)
 
@@ -183,7 +189,10 @@ def main():
             optimizer_G.zero_grad()
 
             # GAN loss
-            fake_gas = generator(real_dm)
+            if epoch == 0 and i == 0:
+                fake_gas = generator.verbose_forward(real_dm, depth=opt.depth)
+            else:
+                fake_gas = generator(real_dm)
             print(f"Generated fake_gase - shape {fake_gas.shape = }")
 
             pred_fake = discriminator(fake_gas, real_dm)
@@ -251,9 +260,11 @@ def main():
 
             # If at sample interval save image
             if batches_done % opt.sample_interval == 0:
-                slices = select_slice(real_dm.detach(), real_gas.detach(), fake_gas.detach(), orthogonal_dim=2, weight=0.0)
-                plot = heatmap_plot(*[s.squeeze() for s in slices], subplot_titles=("dark matter", "real gas", "predicted gas"))
-                write_image(plot, os.path.join("images", f"plot_epoch{epoch}_batch{i}.png"))
+                slices = select_slice(real_dm.detach(), real_gas.detach(), fake_gas.detach(), random_dims=(0, 1),
+                                      orthogonal_dim=2, weight=0.05)
+                plot = heatmap_plot(*[s.squeeze() for s in slices],
+                                    subplot_titles=("dark matter", "real gas", "predicted gas"))
+                # write_image(plot, os.path.join("images", f"plot_epoch{epoch}_batch{i}.png"))
                 # sample_images(batches_done)
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
