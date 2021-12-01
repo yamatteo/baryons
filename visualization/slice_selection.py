@@ -17,6 +17,7 @@ def select_slice(*tensors, random_dims=(0, 1), orthogonal_dim: int = 2, index: i
 
     assert all(tensor.shape == tensors[0].shape for tensor in tensors), "All tensors must have the same shape"
 
+    tensors = [ t.cpu() for t in tensors ]
     # Will sum over every dimension except the one indicated by `ortho_dim`
     dims = tuple(n for n in range(tensors[0].dim()) if n != orthogonal_dim)
 
