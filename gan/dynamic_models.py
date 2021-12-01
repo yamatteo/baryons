@@ -103,19 +103,18 @@ class Generator(nn.Module):
         stack = [x, ]
         for z in range(self.depth + 1):
             stack.append(self.down_levels[z](stack[-1]))
-            logging.debug(f"depth {z} - append convoluted {stack[-1].shape} to stack")
+            logging.debug(f"At depth {z} - append convoluted {stack[-1].shape} to stack")
 
-        logging.debug("")
-        logging.debug(f"stack is {[t.shape for t in stack]}")
-        logging.debug("")
+        logging.debug("Reached bottom of the generator")
+        logging.debug(f"The stack is now {[t.shape for t in stack]}")
         for z in reversed(range(self.depth + 1)):
             if z < self.depth:
                 stack, queue = stack[:-2], stack[-2:]
                 stack.append(self.connections[z](torch.cat(queue, dim=1)))
                 logging.debug(
-                    f"concat of {queue[0].shape} and {queue[1].shape} to replace last two stack elements with {stack[-1].shape}")
+                    f"Concat of {queue[0].shape} and {queue[1].shape} to replace last two stack elements with {stack[-1].shape}")
             stack.append(self.up_levels[z](stack.pop()))
-            logging.debug(f"depth {z} - replace last element of stack with deconvoluted {stack[-1].shape}")
+            logging.debug(f"At depth {z} - replace last element of stack with deconvoluted {stack[-1].shape}")
         return stack[-1]
 
     def forward(self, x):

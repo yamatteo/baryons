@@ -32,7 +32,6 @@ def select_slice(*tensors, random_dims=(0, 1), orthogonal_dim: int = 2, index: i
                 # For the first tensor in the list, `indexes` is defined as the set of valid indexes (the ones
                 # respecting the weight constrain)
                 indexes = set(valid_indexes)
-            print(f"{indexes = }")
         index = choice(list(indexes))
 
     for d in random_dims:
