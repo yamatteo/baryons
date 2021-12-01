@@ -12,6 +12,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from types import SimpleNamespace
+from importlib import reload
 
 from gan.dataset import Dataset3D
 # from gan.models import UNet, Discriminator
@@ -20,7 +21,7 @@ from visualization import heatmap_plot, select_slice
 
 
 def setup(channels, n_voxel, patch_side, generator_depth, lr, b1, b2, sim_name, mass_range, batch_size,
-          n_cpu, skip_to_epoch=None, **kwargs):
+          n_cpu, root, skip_to_epoch, **kwargs):
     assert n_voxel % patch_side == 0, "parameter n_voxel should be a multiple of parameter patch_side"
     logging.info('Setting up gan...')
 
@@ -120,10 +121,12 @@ def setup(channels, n_voxel, patch_side, generator_depth, lr, b1, b2, sim_name, 
         gt_fake=gt_fake,
         gt_valid=gt_valid,
         Tensor=Tensor,
+        root=root,
     )
 
 
 def run(opt):
+    reload(logging)  # Avoid duplicate logging in JupyterLAb
     logging.basicConfig(
         filename="debug.log",
         filemode="w",
@@ -257,13 +260,14 @@ def run(opt):
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             # Save model checkpoints TODO
             dataset_name = f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}"
+            os.makedirs(os.path.join(opt.root, "saved_models", dataset_name), exist_ok=True)
             torch.save(gan.generator.state_dict(), f"saved_models/{dataset_name}/generator_{epoch}.pth")
             torch.save(gan.discriminator.state_dict(), f"saved_models/{dataset_name}/discriminator_{epoch}.pth")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=str, default=os.path.join(os.path.curdir, 'data'), help="folder where data/ is")
+    parser.add_argument("--root", type=str, default=os.path.curdir, help="folder where data/ is")
     parser.add_argument("--sim_name", type=str, default='TNG300-1')
     parser.add_argument("--mass_range", type=str, default='MASS_1.00e+12_5.00e+12_MSUN')
     parser.add_argument("--n_voxel", type=int, default=128, help="number of voxels set for images")
