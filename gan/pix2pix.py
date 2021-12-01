@@ -13,8 +13,8 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from gan.dataset import Dataset3D
-from gan.models import UNet, Discriminator
-from gan.dynamic_models import Generator, weights_init_normal
+# from gan.models import UNet, Discriminator
+from gan.dynamic_models import Discriminator, Generator, weights_init_normal
 from visualization import heatmap_plot, select_slice
 
 
@@ -82,7 +82,7 @@ def main():
     # generator = UNet(in_dim=opt.channels, out_dim=opt.channels, num_filters=4)
     generator = Generator(in_channels=opt.channels, out_channels=opt.channels, num_filters=4, depth=opt.depth)
     # generator = UNet(in_channels=opt.channels, out_channels=opt.channels)
-    discriminator = Discriminator(in_channels=opt.channels)
+    discriminator = Discriminator(channels=opt.channels)
 
     if cuda:
         generator = generator.cuda()

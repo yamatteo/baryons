@@ -38,6 +38,16 @@ def convolution_same_level(in_channels, out_channels, activation):
     )
 
 
+def discriminator_block(in_channels, out_channels, activation, normalization=None):
+    layers = [nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=4, stride=2, padding=1)]
+    if normalization == "batch":
+        layers.append(nn.BatchNorm3d(out_channels))
+    elif normalization == "instance":
+        layers.append(nn.InstanceNorm3d(out_channels))
+    layers.append(activation)
+    return nn.Sequential(*layers)
+
+
 class Generator(nn.Module):
     def __init__(self, in_channels, out_channels, num_filters, depth, activation=None):
         super(Generator, self).__init__()
@@ -119,3 +129,21 @@ class Generator(nn.Module):
                 stack.append(self.connections[z](torch.cat(queue, dim=1)))
             stack.append(self.up_levels[z](stack.pop()))
         return stack[-1]
+
+
+class Discriminator(nn.Module):
+    def __init__(self, channels):
+        super(Discriminator, self).__init__()
+
+        self.model = nn.Sequential(
+            discriminator_block(channels * 2, 64, activation=nn.LeakyReLU(0.2, inplace=True)),
+            discriminator_block(64, 128, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            discriminator_block(128, 256, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            discriminator_block(256, 512, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            nn.ConstantPad3d((1, 0, 1, 0, 1, 0), 0),
+            nn.Conv3d(512, 1, kernel_size=4, padding=1, bias=False)
+        )
+
+    def forward(self, gas, dm):
+        # Concatenate image and condition image by channels to produce input
+        return self.model(torch.cat((gas, dm), dim=1))
