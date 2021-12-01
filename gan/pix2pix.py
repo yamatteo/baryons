@@ -17,7 +17,7 @@ from importlib import reload
 from gan.dataset import Dataset3D
 # from gan.models import UNet, Discriminator
 from gan.dynamic_models import Discriminator, Generator, weights_init_normal
-from visualization import heatmap_plot, select_slice
+from visualization.report import save_report
 
 
 def setup(channels, n_voxel, patch_side, generator_depth, lr, b1, b2, sim_name, mass_range, batch_size,
@@ -250,12 +250,15 @@ def run(opt):
 
             # If at sample interval save image TODO
             if batches_done % opt.sample_interval == 0:
-                slices = select_slice(real_dm.detach(), real_gas.detach(), fake_gas.detach(), random_dims=(0, 1),
-                                      orthogonal_dim=2, weight=0.05)
-                plot = heatmap_plot(*[s.squeeze() for s in slices],
-                                    subplot_titles=("dark matter", "real gas", "predicted gas"))
-                # write_image(plot, os.path.join("images", f"plot_epoch{epoch}_batch{i}.png"))
-                # sample_images(batches_done)
+                save_report(
+                    real_dm.detach(),
+                    real_gas.detach(),
+                    fake_gas.detach(),
+                    database_name=f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}",
+                    root=opt.root,
+                    epoch=epoch,
+                    batch=i,
+                )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             # Save model checkpoints TODO
