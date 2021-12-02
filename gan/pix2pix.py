@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import itertools
 import logging
 import os
 import sys
@@ -107,21 +108,21 @@ def single_run(opt):
     logging.getLogger("matplotlib.font_manager").disabled = True
     logging.getLogger("parso.python.diff").disabled = True
 
-    gan = setup_gan(opt)
+    p2p3d = setup_gan(opt)
     metric = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
 
     if opt.skip_to_epoch == 0:
         # Initialize weights
-        gan.generator.apply(weights_init_normal)
-        gan.discriminator.apply(weights_init_normal)
+        p2p3d.generator.apply(weights_init_normal)
+        p2p3d.discriminator.apply(weights_init_normal)
     else:
         # Load pretrained models
-        gan.generator.load_state_dict(
+        p2p3d.generator.load_state_dict(
             torch.load(
                 f"saved_models/{opt.dataset_name}/generator_{opt.skip_to_epoch}.pth"
             )
         )
-        gan.discriminator.load_state_dict(
+        p2p3d.discriminator.load_state_dict(
             torch.load(
                 f"saved_models/{opt.dataset_name}/discriminator_{opt.skip_to_epoch}.pth"
             )
@@ -133,13 +134,13 @@ def single_run(opt):
 
     for epoch in range(opt.skip_to_epoch, opt.n_epochs):
 
-        for i, batch in enumerate(gan.dataloaders["train"]):  # batch is a dictionary
+        for i, batch in enumerate(p2p3d.dataloaders["train"]):  # batch is a dictionary
 
             logging.debug(f"Starting batch {i}")
 
             # Model inputs - shape [batch_size, channels, n_voxel, n_voxel, n_voxel]
-            real_dm = batch["DM"].type(gan.tensor_type)
-            real_gas = batch["GAS"].type(gan.tensor_type)
+            real_dm = batch["DM"].type(p2p3d.tensor_type)
+            real_gas = batch["GAS"].type(p2p3d.tensor_type)
 
             logging.debug(f"Defined real_dm and real_gas - shape {real_dm.shape}")
 
@@ -149,18 +150,18 @@ def single_run(opt):
 
             logging.debug("Starting training Generator")
 
-            gan.g_optimizer.zero_grad()
+            p2p3d.g_optimizer.zero_grad()
 
             # GAN loss
-            fake_gas = gan.generator(real_dm)
+            fake_gas = p2p3d.generator(real_dm)
             logging.debug(f"Generated fake_gas - shape {fake_gas.shape = }")
 
-            pred_fake = gan.discriminator(fake_gas, real_dm)
+            pred_fake = p2p3d.discriminator(fake_gas, real_dm)
             logging.debug(
                 f"Made fake prediction of discriminator - shape {pred_fake.shape =}"
             )
 
-            loss_gan = opt.criterion_gan(pred_fake, gan.gt_valid)
+            loss_gan = opt.criterion_gan(pred_fake, p2p3d.gt_valid)
             logging.debug(f"{loss_gan = }")
 
             loss_pixel = opt.criterion_pixelwise(fake_gas, real_gas)
@@ -172,7 +173,7 @@ def single_run(opt):
             loss_g.backward()
             logging.debug("loss_G.backward() done")
 
-            gan.g_optimizer.step()
+            p2p3d.g_optimizer.step()
             logging.debug("optimizer_G.step() done")
 
             # ---------------------
@@ -182,20 +183,20 @@ def single_run(opt):
             if epoch == 0:
                 logging.debug("Starting training Discriminator")
 
-            gan.d_optimizer.zero_grad()
+            p2p3d.d_optimizer.zero_grad()
 
             # Real loss
-            pred_real = gan.discriminator(real_gas, real_dm)
-            loss_real = opt.criterion_gan(pred_real, gan.gt_valid)
+            pred_real = p2p3d.discriminator(real_gas, real_dm)
+            loss_real = opt.criterion_gan(pred_real, p2p3d.gt_valid)
             logging.debug(
                 f"Generated pred_real (shape {pred_real.shape}) - loss {loss_real:0.2}"
             )
 
             # Fake loss
-            pred_fake = gan.discriminator(
+            pred_fake = p2p3d.discriminator(
                 fake_gas.detach(), real_dm
             )  # CP: Detach from gradient calculation
-            loss_fake = opt.criterion_gan(pred_fake, gan.gt_fake)
+            loss_fake = opt.criterion_gan(pred_fake, p2p3d.gt_fake)
             logging.debug(
                 f"Generated pred_fake (shape {pred_fake.shape}) - loss {loss_fake:0.2}"
             )
@@ -204,15 +205,15 @@ def single_run(opt):
             loss_d = 0.5 * (loss_real + loss_fake)
 
             loss_d.backward()
-            gan.d_optimizer.step()
+            p2p3d.d_optimizer.step()
 
             # --------------
             #  Log Progress
             # --------------
 
             # Determine approximate time left
-            batches_done = epoch * len(gan.dataloaders["train"]) + i + 1
-            batches_left = opt.n_epochs * len(gan.dataloaders["train"]) - batches_done
+            batches_done = epoch * len(p2p3d.dataloaders["train"]) + i + 1
+            batches_left = opt.n_epochs * len(p2p3d.dataloaders["train"]) - batches_done
             time_left = datetime.timedelta(
                 seconds=batches_left * (time.time() - init_time) / batches_done
             )
@@ -226,7 +227,7 @@ def single_run(opt):
 
             logging.info(
                 f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]"
-                + f" [Batch {i + 1}/{len(gan.dataloaders['train'])}]"
+                + f" [Batch {i + 1}/{len(p2p3d.dataloaders['train'])}]"
                 + f" [D loss: {loss_d.item():.3e}]"
                 + f" [G loss: {loss_g.item():.3e}, pixel: {loss_pixel.item():.3e}, adv: {loss_gan.item():.3e}]"
                 + f" ETA: {str(time_left).split('.')[0]}"
@@ -250,110 +251,161 @@ def single_run(opt):
                 os.path.join(opt.root, "saved_models", dataset_name), exist_ok=True
             )
             torch.save(
-                gan.generator.state_dict(),
+                p2p3d.generator.state_dict(),
                 f"saved_models/{dataset_name}/generator_{epoch}.pth",
             )
             torch.save(
-                gan.discriminator.state_dict(),
+                p2p3d.discriminator.state_dict(),
                 f"saved_models/{dataset_name}/discriminator_{epoch}.pth",
             )
 
+    del p2p3d
+    del opt
     return metric
 
 
+def many_runs(base_opt, prog_opt):
+    global_metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
+    prog_labels = tuple(prog_opt.keys())
+    for possible_opt in itertools.product(*prog_opt.values()):
+        torch.cuda.empty_cache()
+        extra_opt = dict(zip(prog_labels, possible_opt))
+        opt = dict(vars(base_opt), **extra_opt)
+        metrics = single_run(SimpleNamespace(**opt)).assign(**extra_opt)
+        global_metrics = global_metrics.append(metrics, ignore_index=True)
+    return global_metrics
+
+
+def test():
+    base_opt = SimpleNamespace(
+        sim_name="TNG300-1",
+        mass_range="MASS_1.00e+12_5.00e+12_MSUN",
+        n_voxel=128,
+        channels=1,
+
+        generator_depth=5,
+        patch_side=16,
+        num_filters=4,
+        criterion_gan=torch.nn.MSELoss(),
+        criterion_pixelwise=torch.nn.L1Loss(),
+        lambda_pixel=100,
+
+        skip_to_epoch=0,
+        n_epochs=20,
+        batch_size=2,
+
+        lr=0.0002,
+        b1=0.5,
+        b2=0.999,
+        decay_epoch=100,
+
+        root=os.getcwd(),
+        n_cpu=8,
+        sample_interval=5,
+        checkpoint_interval=-1,
+        log_level=logging.INFO,
+        cuda=True,
+    )
+    gm = many_runs(base_opt, {
+        "generator_depth": (4, 5, 6),
+        "num_filters": (2, 4, 8),
+    })
+    print(gm)
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--root", type=str, default=os.path.curdir, help="folder where data/ is"
-    )
-    parser.add_argument("--sim_name", type=str, default="TNG300-1")
-    parser.add_argument("--mass_range", type=str, default="MASS_1.00e+12_5.00e+12_MSUN")
-    parser.add_argument(
-        "--n_voxel", type=int, default=128, help="number of voxels set for images"
-    )
-    parser.add_argument(
-        "--skip_to_epoch", type=int, default=0, help="epoch to start training from"
-    )
-    parser.add_argument(
-        "--n_epochs", type=int, default=20, help="number of epochs of training"
-    )
-    parser.add_argument(
-        "--dataset_name", type=str, default="facades", help="name of the dataset"
-    )
-    parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
-    parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-    parser.add_argument(
-        "--b1",
-        type=float,
-        default=0.5,
-        help="adam: decay of first order momentum of gradient",
-    )
-    parser.add_argument(
-        "--b2",
-        type=float,
-        default=0.999,
-        help="adam: decay of first order momentum of gradient",
-    )
-    parser.add_argument(
-        "--decay_epoch",
-        type=int,
-        default=100,
-        help="epoch from which to start lr decay",
-    )
-    parser.add_argument(
-        "--generator_depth",
-        type=int,
-        default=5,
-        help="depth of the generator architecture",
-    )
-    parser.add_argument(
-        "--n_cpu",
-        type=int,
-        default=8,
-        help="number of cpu threads to use during batch generation",
-    )
-    # parser.add_argument("--img_height", type=int, default=256, help="size of image height")
-    # parser.add_argument("--img_width", type=int, default=256, help="size of image width")
-    parser.add_argument(
-        "--channels", type=int, default=1, help="number of image channels"
-    )
-    parser.add_argument("--patch_side", type=int, default=16)
-    parser.add_argument(
-        "--sample_interval",
-        type=int,
-        default=5,
-        help="interval between sampling of images from generators",
-    )
-    parser.add_argument(
-        "--checkpoint_interval",
-        type=int,
-        default=-1,
-        help="interval between model checkpoints",
-    )
-    parser.add_argument(
-        "--log_level",
-        type=int,
-        default=logging.INFO,
-    )
-    parser.add_argument(
-        "--cuda",
-        type=bool,
-        default=True if torch.cuda.is_available() else False,
-    )
-    parser.add_argument(
-        "--num_filters",
-        type=int,
-        default=4,
-    )
-    parser.add_argument(
-        "--lambda_pixel",
-        type=int,
-        default=100,
-    )
-
-    opt = parser.parse_args()
-
-    vars(opt)["criterion_gan"] = torch.nn.MSELoss()
-    vars(opt)["criterion_pixelwise"] = torch.nn.L1Loss()
-
-    single_run(opt)
+    test()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument(
+    #     "--root", type=str, default=os.path.curdir, help="folder where data/ is"
+    # )
+    # parser.add_argument("--sim_name", type=str, default="TNG300-1")
+    # parser.add_argument("--mass_range", type=str, default="MASS_1.00e+12_5.00e+12_MSUN")
+    # parser.add_argument(
+    #     "--n_voxel", type=int, default=128, help="number of voxels set for images"
+    # )
+    # parser.add_argument(
+    #     "--skip_to_epoch", type=int, default=0, help="epoch to start training from"
+    # )
+    # parser.add_argument(
+    #     "--n_epochs", type=int, default=20, help="number of epochs of training"
+    # )
+    # parser.add_argument(
+    #     "--dataset_name", type=str, default="facades", help="name of the dataset"
+    # )
+    # parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
+    # parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
+    # parser.add_argument(
+    #     "--b1",
+    #     type=float,
+    #     default=0.5,
+    #     help="adam: decay of first order momentum of gradient",
+    # )
+    # parser.add_argument(
+    #     "--b2",
+    #     type=float,
+    #     default=0.999,
+    #     help="adam: decay of first order momentum of gradient",
+    # )
+    # parser.add_argument(
+    #     "--decay_epoch",
+    #     type=int,
+    #     default=100,
+    #     help="epoch from which to start lr decay",
+    # )
+    # parser.add_argument(
+    #     "--generator_depth",
+    #     type=int,
+    #     default=5,
+    #     help="depth of the generator architecture",
+    # )
+    # parser.add_argument(
+    #     "--n_cpu",
+    #     type=int,
+    #     default=8,
+    #     help="number of cpu threads to use during batch generation",
+    # )
+    # # parser.add_argument("--img_height", type=int, default=256, help="size of image height")
+    # # parser.add_argument("--img_width", type=int, default=256, help="size of image width")
+    # parser.add_argument(
+    #     "--channels", type=int, default=1, help="number of image channels"
+    # )
+    # parser.add_argument("--patch_side", type=int, default=16)
+    # parser.add_argument(
+    #     "--sample_interval",
+    #     type=int,
+    #     default=5,
+    #     help="interval between sampling of images from generators",
+    # )
+    # parser.add_argument(
+    #     "--checkpoint_interval",
+    #     type=int,
+    #     default=-1,
+    #     help="interval between model checkpoints",
+    # )
+    # parser.add_argument(
+    #     "--log_level",
+    #     type=int,
+    #     default=logging.INFO,
+    # )
+    # parser.add_argument(
+    #     "--cuda",
+    #     type=bool,
+    #     default=True if torch.cuda.is_available() else False,
+    # )
+    # parser.add_argument(
+    #     "--num_filters",
+    #     type=int,
+    #     default=4,
+    # )
+    # parser.add_argument(
+    #     "--lambda_pixel",
+    #     type=int,
+    #     default=100,
+    # )
+    #
+    # opt = parser.parse_args()
+    #
+    # vars(opt)["criterion_gan"] = torch.nn.MSELoss()
+    # vars(opt)["criterion_pixelwise"] = torch.nn.L1Loss()
+    #
+    # single_run(opt)
