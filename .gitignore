@@ -4,7 +4,7 @@
 /images/
 /saved_models/
 
-/debug.log
+*.log
 
 *.csv
 *:Zone.Identifier
