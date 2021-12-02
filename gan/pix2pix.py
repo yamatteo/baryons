@@ -81,12 +81,24 @@ def setup_gan(opt):
         np.zeros((opt.batch_size, opt.channels, *([opt.n_voxel // opt.patch_side] * 3)))
     )
 
+    if opt.criterion_gan == "mse":
+        criterion_gan = torch.nn.MSELoss()
+    else:
+        criterion_gan = None
+
+    if opt.criterion_pixelwise == "l1":
+        criterion_pixelwise = torch.nn.L1Loss()
+    else:
+        criterion_pixelwise = None
+
     return SimpleNamespace(
-        generator=generator,
-        discriminator=discriminator,
+        criterion_gan=criterion_gan,
+        criterion_pixelwise=criterion_pixelwise,
         d_optimizer=d_optimizer,
-        g_optimizer=g_optimizer,
         dataloaders=dataloaders,
+        discriminator=discriminator,
+        g_optimizer=g_optimizer,
+        generator=generator,
         gt_fake=gt_fake,
         gt_valid=gt_valid,
         tensor_type=tensor_type,
@@ -99,7 +111,7 @@ def single_run(opt):
         filename="last_run.log",
         filemode="w",
         format="%(levelname)s: %(message)s",
-        level=opt.log_level,
+        level=logging.DEBUG if opt.log_level=='debug' else logging.INFO,
     )
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
@@ -161,10 +173,10 @@ def single_run(opt):
                 f"Made fake prediction of discriminator - shape {pred_fake.shape =}"
             )
 
-            loss_gan = opt.criterion_gan(pred_fake, p2p3d.gt_valid)
+            loss_gan = p2p3d.criterion_gan(pred_fake, p2p3d.gt_valid)
             logging.debug(f"{loss_gan = }")
 
-            loss_pixel = opt.criterion_pixelwise(fake_gas, real_gas)
+            loss_pixel = p2p3d.criterion_pixelwise(fake_gas, real_gas)
             logging.debug(f"{loss_pixel = }")
 
             loss_g = loss_gan + opt.lambda_pixel * loss_pixel
@@ -187,7 +199,7 @@ def single_run(opt):
 
             # Real loss
             pred_real = p2p3d.discriminator(real_gas, real_dm)
-            loss_real = opt.criterion_gan(pred_real, p2p3d.gt_valid)
+            loss_real = p2p3d.criterion_gan(pred_real, p2p3d.gt_valid)
             logging.debug(
                 f"Generated pred_real (shape {pred_real.shape}) - loss {loss_real:0.2}"
             )
@@ -196,7 +208,7 @@ def single_run(opt):
             pred_fake = p2p3d.discriminator(
                 fake_gas.detach(), real_dm
             )  # CP: Detach from gradient calculation
-            loss_fake = opt.criterion_gan(pred_fake, p2p3d.gt_fake)
+            loss_fake = p2p3d.criterion_gan(pred_fake, p2p3d.gt_fake)
             logging.debug(
                 f"Generated pred_fake (shape {pred_fake.shape}) - loss {loss_fake:0.2}"
             )
@@ -264,7 +276,7 @@ def single_run(opt):
     return metric
 
 
-def many_runs(base_opt, prog_opt):
+def many_runs(base_opt, prog_opt:dict):
     global_metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
     prog_labels = tuple(prog_opt.keys())
     for possible_opt in itertools.product(*prog_opt.values()):
