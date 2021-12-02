@@ -6,6 +6,7 @@ import sys
 import time
 
 import numpy as np
+import pandas as pd
 import torch
 import torchvision.transforms as transforms
 from torch.autograd import Variable
@@ -15,133 +16,116 @@ from types import SimpleNamespace
 from importlib import reload
 
 from gan.dataset import Dataset3D
+
 # from gan.models import UNet, Discriminator
 from gan.dynamic_models import Discriminator, Generator, weights_init_normal
 from visualization.report import save_report
 
 
-def setup(channels, n_voxel, patch_side, generator_depth, lr, b1, b2, sim_name, mass_range, batch_size,
-          n_cpu, root, skip_to_epoch, **kwargs):
-    assert n_voxel % patch_side == 0, "parameter n_voxel should be a multiple of parameter patch_side"
-    logging.info('Setting up gan...')
+def setup_gan(opt):
+    logging.info(f"Setting up GAN: {opt}")
 
-    cuda = True if torch.cuda.is_available() else False
-    if cuda is False:
-        logging.warning("Running without cuda!")
+    tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
 
-    # Tensor type
-    Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+    generator = Generator(
+        in_channels=opt.channels,
+        out_channels=opt.channels,
+        num_filters=opt.num_filters,
+        depth=opt.generator_depth,
+    )
 
-    generator = Generator(in_channels=channels, out_channels=channels, num_filters=4, depth=generator_depth)
-    discriminator = Discriminator(channels=channels)
+    discriminator = Discriminator(channels=opt.channels)
 
-    # Loss functions
-    criterion_gan = torch.nn.MSELoss()
-    criterion_pixelwise = torch.nn.L1Loss()
-
-    # Loss weight of L1 pixel-wise loss between translated image and real image
-    lambda_pixel = 100
-
-    if cuda:
+    if opt.cuda is True:
         generator = generator.cuda()
         discriminator = discriminator.cuda()
-        criterion_gan.cuda()
-        criterion_pixelwise.cuda()
 
-    if skip_to_epoch == 0:
-        # Initialize weights
-        generator.apply(weights_init_normal)
-        discriminator.apply(weights_init_normal)
-    else:
-        # Load pretrained models
-        dataset_name = f"{sim_name}__{mass_range}__{n_voxel}"
-        generator.load_state_dict(
-            torch.load(f"saved_models/{dataset_name}/generator_{skip_to_epoch}.pth")
-        )
-        discriminator.load_state_dict(
-            torch.load(f"saved_models/{dataset_name}/discriminator_{skip_to_epoch}.pth")
-        )
+    g_optimizer = torch.optim.Adam(
+        generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+    )
+    d_optimizer = torch.optim.Adam(
+        discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+    )
 
-    # Optimizers
-    optimizer_G = torch.optim.Adam(generator.parameters(), lr=lr, betas=(b1, b2))
-    optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(b1, b2))
-
-    # Configure dataloaders
-    transforms_ = [
+    transformations = [
         # CP: transforms.Resize((opt.img_height, opt.img_width), Image.BICUBIC),
         # transforms.ToTensor(),
         # CP: transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         # transforms.Normalize((0.5), (0.5)),  # CP: one value for the mean for each channel (here one channel and two images)
     ]
 
-    dataloader = DataLoader(
-        Dataset3D(
-            sim_name=sim_name,
-            mass_range=mass_range,
-            n_voxel=n_voxel,
-            mode="train",
-            transforms=transforms_,
-        ),
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=n_cpu,
-        drop_last=True,
-    )
-
-    val_dataloader = DataLoader(
-        Dataset3D(
-            sim_name=sim_name,
-            mass_range=mass_range,
-            n_voxel=n_voxel,
-            mode="valid",
-            transforms=transforms_,
-        ),
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=n_cpu,
-        drop_last=True,
-    )
+    dataloaders = {
+        mode: DataLoader(
+            Dataset3D(
+                sim_name=opt.sim_name,
+                mass_range=opt.mass_range,
+                n_voxel=opt.n_voxel,
+                mode="train",
+                transforms=transformations,
+            ),
+            batch_size=opt.batch_size,
+            shuffle=True,
+            num_workers=opt.n_cpu,
+            drop_last=True,
+        )
+        for mode in ("train", "valid")
+    }
 
     # Adversarial ground truths
     # shape [batch_size, channels, n_voxel // patch_side, n_voxel // patch_side, n_voxel // patch_side]
-    gt_valid = Tensor(np.ones((batch_size, channels, *([n_voxel // patch_side] * 3))))
-    gt_fake = Tensor(np.zeros((batch_size, channels, *([n_voxel // patch_side] * 3))))
+    gt_valid = tensor_type(
+        np.ones((opt.batch_size, opt.channels, *([opt.n_voxel // opt.patch_side] * 3)))
+    )
+    gt_fake = tensor_type(
+        np.zeros((opt.batch_size, opt.channels, *([opt.n_voxel // opt.patch_side] * 3)))
+    )
 
     return SimpleNamespace(
-        cuda=cuda,
         generator=generator,
         discriminator=discriminator,
-        criterion_gan=criterion_gan,
-        criterion_pixelwise=criterion_pixelwise,
-        lambda_pixel=lambda_pixel,
-        optimizer_D=optimizer_D,
-        optimizer_G=optimizer_G,
-        dataloader=dataloader,
-        val_dataloader=val_dataloader,
+        d_optimizer=d_optimizer,
+        g_optimizer=g_optimizer,
+        dataloaders=dataloaders,
         gt_fake=gt_fake,
         gt_valid=gt_valid,
-        Tensor=Tensor,
-        root=root,
+        tensor_type=tensor_type,
     )
 
 
-def run(opt):
-    reload(logging)  # Avoid duplicate logging in JupyterLAb
+def single_run(opt):
+    reload(logging)  # Avoid duplicate logging in JupyterLab
     logging.basicConfig(
-        filename="debug.log",
+        filename="last_run.log",
         filemode="w",
-        format='%(levelname)s: %(message)s',
-        level=logging.DEBUG,
+        format="%(levelname)s: %(message)s",
+        level=opt.log_level,
     )
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(console)
-    logging.getLogger('matplotlib.font_manager').disabled = True
-    logging.getLogger('parso.python.diff').disabled = True
+    logging.getLogger("matplotlib.font_manager").disabled = True
+    logging.getLogger("parso.python.diff").disabled = True
 
-    logging.info(opt)
-    gan = setup(**vars(opt))
+    gan = setup_gan(opt)
+    metric = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
+
+    if opt.skip_to_epoch == 0:
+        # Initialize weights
+        gan.generator.apply(weights_init_normal)
+        gan.discriminator.apply(weights_init_normal)
+    else:
+        # Load pretrained models
+        gan.generator.load_state_dict(
+            torch.load(
+                f"saved_models/{opt.dataset_name}/generator_{opt.skip_to_epoch}.pth"
+            )
+        )
+        gan.discriminator.load_state_dict(
+            torch.load(
+                f"saved_models/{opt.dataset_name}/discriminator_{opt.skip_to_epoch}.pth"
+            )
+        )
 
     init_time = time.time()
 
@@ -149,60 +133,47 @@ def run(opt):
 
     for epoch in range(opt.skip_to_epoch, opt.n_epochs):
 
-        for i, batch in enumerate(gan.dataloader):  # batch is a dictionary
+        for i, batch in enumerate(gan.dataloaders["train"]):  # batch is a dictionary
 
-            if epoch == 0:
-                logging.debug(f"Starting batch {i}")
+            logging.debug(f"Starting batch {i}")
 
             # Model inputs - shape [batch_size, channels, n_voxel, n_voxel, n_voxel]
-            real_dm = Variable(batch["DM"].type(gan.Tensor))
-            real_gas = Variable(batch["GAS"].type(gan.Tensor))
+            real_dm = batch["DM"].type(gan.tensor_type)
+            real_gas = batch["GAS"].type(gan.tensor_type)
 
-            if epoch == 0:
-                logging.debug(f"Defined real_dm and real_gas - shape {real_dm.shape}")
+            logging.debug(f"Defined real_dm and real_gas - shape {real_dm.shape}")
 
             # ------------------
             #  Train Generator
             # ------------------
 
-            if epoch == 0:
-                logging.debug("Starting training Generator")
+            logging.debug("Starting training Generator")
 
-            gan.optimizer_G.zero_grad()
+            gan.g_optimizer.zero_grad()
 
             # GAN loss
-            if epoch == 0 and i == 0:
-                fake_gas = gan.generator.verbose_forward(real_dm, depth=opt.generator_depth)
-            else:
-                fake_gas = gan.generator(real_dm)
-            if epoch == 0:
-                logging.debug(f"Generated fake_gas - shape {fake_gas.shape = }")
+            fake_gas = gan.generator(real_dm)
+            logging.debug(f"Generated fake_gas - shape {fake_gas.shape = }")
 
             pred_fake = gan.discriminator(fake_gas, real_dm)
-            if epoch == 0:
-                logging.debug(f"Made fake prediction of discriminator - shape {pred_fake.shape =}")
+            logging.debug(
+                f"Made fake prediction of discriminator - shape {pred_fake.shape =}"
+            )
 
-            loss_gan = gan.criterion_gan(pred_fake, gan.gt_valid)
-            if epoch == 0:
-                logging.debug(f"{loss_gan = }")
+            loss_gan = opt.criterion_gan(pred_fake, gan.gt_valid)
+            logging.debug(f"{loss_gan = }")
 
-            # Pixel-wise loss
-            loss_pixel = gan.criterion_pixelwise(fake_gas, real_gas)
-            if epoch == 0:
-                logging.debug(f"{loss_pixel = }")
+            loss_pixel = opt.criterion_pixelwise(fake_gas, real_gas)
+            logging.debug(f"{loss_pixel = }")
 
-            # Total loss
-            loss_G = loss_gan + gan.lambda_pixel * loss_pixel
-            if epoch == 0:
-                logging.debug(f"{loss_G = }")
+            loss_g = loss_gan + opt.lambda_pixel * loss_pixel
+            logging.debug(f"{loss_g = }")
 
-            loss_G.backward()
-            if epoch == 0:
-                logging.debug("loss_G.backward() done")
+            loss_g.backward()
+            logging.debug("loss_G.backward() done")
 
-            gan.optimizer_G.step()
-            if epoch == 0:
-                logging.debug("optimizer_G.step() done")
+            gan.g_optimizer.step()
+            logging.debug("optimizer_G.step() done")
 
             # ---------------------
             #  Train Discriminator
@@ -211,41 +182,54 @@ def run(opt):
             if epoch == 0:
                 logging.debug("Starting training Discriminator")
 
-            gan.optimizer_D.zero_grad()
+            gan.d_optimizer.zero_grad()
 
             # Real loss
             pred_real = gan.discriminator(real_gas, real_dm)
-            loss_real = gan.criterion_gan(pred_real, gan.gt_valid)
-            if epoch == 0:
-                logging.debug(f"Generated pred_real (shape {pred_real.shape}) - loss {loss_real:0.2}")
+            loss_real = opt.criterion_gan(pred_real, gan.gt_valid)
+            logging.debug(
+                f"Generated pred_real (shape {pred_real.shape}) - loss {loss_real:0.2}"
+            )
 
             # Fake loss
-            pred_fake = gan.discriminator(fake_gas.detach(), real_dm)  # CP: Detach from gradient calculation
-            loss_fake = gan.criterion_gan(pred_fake, gan.gt_fake)
-            if epoch == 0:
-                logging.debug(f"Generated pred_fake (shape {pred_fake.shape}) - loss {loss_fake:0.2}")
+            pred_fake = gan.discriminator(
+                fake_gas.detach(), real_dm
+            )  # CP: Detach from gradient calculation
+            loss_fake = opt.criterion_gan(pred_fake, gan.gt_fake)
+            logging.debug(
+                f"Generated pred_fake (shape {pred_fake.shape}) - loss {loss_fake:0.2}"
+            )
 
             # Total loss
-            loss_D = 0.5 * (loss_real + loss_fake)
+            loss_d = 0.5 * (loss_real + loss_fake)
 
-            loss_D.backward()
-            gan.optimizer_D.step()
+            loss_d.backward()
+            gan.d_optimizer.step()
 
             # --------------
             #  Log Progress
             # --------------
 
             # Determine approximate time left
-            batches_done = epoch * len(gan.dataloader) + i + 1
-            batches_left = opt.n_epochs * len(gan.dataloader) - batches_done
-            time_left = datetime.timedelta(seconds=batches_left * (time.time() - init_time) / batches_done)
+            batches_done = epoch * len(gan.dataloaders["train"]) + i + 1
+            batches_left = opt.n_epochs * len(gan.dataloaders["train"]) - batches_done
+            time_left = datetime.timedelta(
+                seconds=batches_left * (time.time() - init_time) / batches_done
+            )
+
+            metric = metric.append({
+                "epoch": epoch + 1,
+                "time": float(time.time() - init_time),
+                "loss_d": loss_d.item(),
+                "loss_g": loss_g.item()
+            }, ignore_index=True)
 
             logging.info(
-                f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]" +
-                f" [Batch {i + 1}/{len(gan.dataloader)}]" +
-                f" [D loss: {loss_D.item():.3e}]" +
-                f" [G loss: {loss_G.item():.3e}, pixel: {loss_pixel.item():.3e}, adv: {loss_gan.item():.3e}]" +
-                f" ETA: {str(time_left).split('.')[0]}"
+                f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]"
+                + f" [Batch {i + 1}/{len(gan.dataloaders['train'])}]"
+                + f" [D loss: {loss_d.item():.3e}]"
+                + f" [G loss: {loss_g.item():.3e}, pixel: {loss_pixel.item():.3e}, adv: {loss_gan.item():.3e}]"
+                + f" ETA: {str(time_left).split('.')[0]}"
             )
 
             # If at sample interval save image TODO
@@ -261,35 +245,115 @@ def run(opt):
                 )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
-            # Save model checkpoints TODO
             dataset_name = f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}"
-            os.makedirs(os.path.join(opt.root, "saved_models", dataset_name), exist_ok=True)
-            torch.save(gan.generator.state_dict(), f"saved_models/{dataset_name}/generator_{epoch}.pth")
-            torch.save(gan.discriminator.state_dict(), f"saved_models/{dataset_name}/discriminator_{epoch}.pth")
+            os.makedirs(
+                os.path.join(opt.root, "saved_models", dataset_name), exist_ok=True
+            )
+            torch.save(
+                gan.generator.state_dict(),
+                f"saved_models/{dataset_name}/generator_{epoch}.pth",
+            )
+            torch.save(
+                gan.discriminator.state_dict(),
+                f"saved_models/{dataset_name}/discriminator_{epoch}.pth",
+            )
+
+    return metric
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=str, default=os.path.curdir, help="folder where data/ is")
-    parser.add_argument("--sim_name", type=str, default='TNG300-1')
-    parser.add_argument("--mass_range", type=str, default='MASS_1.00e+12_5.00e+12_MSUN')
-    parser.add_argument("--n_voxel", type=int, default=128, help="number of voxels set for images")
-    parser.add_argument("--skip_to_epoch", type=int, default=0, help="epoch to start training from")
-    parser.add_argument("--n_epochs", type=int, default=20, help="number of epochs of training")
-    parser.add_argument("--dataset_name", type=str, default="facades", help="name of the dataset")
+    parser.add_argument(
+        "--root", type=str, default=os.path.curdir, help="folder where data/ is"
+    )
+    parser.add_argument("--sim_name", type=str, default="TNG300-1")
+    parser.add_argument("--mass_range", type=str, default="MASS_1.00e+12_5.00e+12_MSUN")
+    parser.add_argument(
+        "--n_voxel", type=int, default=128, help="number of voxels set for images"
+    )
+    parser.add_argument(
+        "--skip_to_epoch", type=int, default=0, help="epoch to start training from"
+    )
+    parser.add_argument(
+        "--n_epochs", type=int, default=20, help="number of epochs of training"
+    )
+    parser.add_argument(
+        "--dataset_name", type=str, default="facades", help="name of the dataset"
+    )
     parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
     parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-    parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
-    parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
-    parser.add_argument("--decay_epoch", type=int, default=100, help="epoch from which to start lr decay")
-    parser.add_argument("--generator_depth", type=int, default=5, help="depth of the generator architecture")
-    parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
+    parser.add_argument(
+        "--b1",
+        type=float,
+        default=0.5,
+        help="adam: decay of first order momentum of gradient",
+    )
+    parser.add_argument(
+        "--b2",
+        type=float,
+        default=0.999,
+        help="adam: decay of first order momentum of gradient",
+    )
+    parser.add_argument(
+        "--decay_epoch",
+        type=int,
+        default=100,
+        help="epoch from which to start lr decay",
+    )
+    parser.add_argument(
+        "--generator_depth",
+        type=int,
+        default=5,
+        help="depth of the generator architecture",
+    )
+    parser.add_argument(
+        "--n_cpu",
+        type=int,
+        default=8,
+        help="number of cpu threads to use during batch generation",
+    )
     # parser.add_argument("--img_height", type=int, default=256, help="size of image height")
     # parser.add_argument("--img_width", type=int, default=256, help="size of image width")
-    parser.add_argument("--channels", type=int, default=1, help="number of image channels")
+    parser.add_argument(
+        "--channels", type=int, default=1, help="number of image channels"
+    )
     parser.add_argument("--patch_side", type=int, default=16)
-    parser.add_argument("--sample_interval", type=int, default=5,
-                        help="interval between sampling of images from generators")
-    parser.add_argument("--checkpoint_interval", type=int, default=-1, help="interval between model checkpoints")
+    parser.add_argument(
+        "--sample_interval",
+        type=int,
+        default=5,
+        help="interval between sampling of images from generators",
+    )
+    parser.add_argument(
+        "--checkpoint_interval",
+        type=int,
+        default=-1,
+        help="interval between model checkpoints",
+    )
+    parser.add_argument(
+        "--log_level",
+        type=int,
+        default=logging.INFO,
+    )
+    parser.add_argument(
+        "--cuda",
+        type=bool,
+        default=True if torch.cuda.is_available() else False,
+    )
+    parser.add_argument(
+        "--num_filters",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lambda_pixel",
+        type=int,
+        default=100,
+    )
 
-    run(parser.parse_args())
+    opt = parser.parse_args()
+
+    vars(opt)["criterion_gan"] = torch.nn.MSELoss()
+    vars(opt)["criterion_pixelwise"] = torch.nn.L1Loss()
+
+    single_run(opt)
