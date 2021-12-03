@@ -13,8 +13,8 @@ import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from types import SimpleNamespace
 from importlib import reload
+from argparse import Namespace
 
 from gan.dataset import Dataset3D
 
@@ -91,7 +91,7 @@ def setup_gan(opt):
     else:
         criterion_pixelwise = None
 
-    return SimpleNamespace(
+    return Namespace(
         criterion_gan=criterion_gan,
         criterion_pixelwise=criterion_pixelwise,
         d_optimizer=d_optimizer,
@@ -105,13 +105,13 @@ def setup_gan(opt):
     )
 
 
-def single_run(opt):
+def single_run(opt: Namespace):
     reload(logging)  # Avoid duplicate logging in JupyterLab
     logging.basicConfig(
         filename="last_run.log",
-        filemode="w",
+        filemode=opt.log_mode,
         format="%(levelname)s: %(message)s",
-        level=logging.DEBUG if opt.log_level=='debug' else logging.INFO,
+        level=logging.DEBUG if opt.log_level == 'debug' else logging.INFO,
     )
     console = logging.StreamHandler()
     console.setLevel(logging.INFO)
@@ -245,7 +245,7 @@ def single_run(opt):
                 + f" ETA: {str(time_left).split('.')[0]}"
             )
 
-            # If at sample interval save image TODO
+            # If at sample interval save image
             if batches_done % opt.sample_interval == 0:
                 save_report(
                     real_dm.detach(),
@@ -276,20 +276,23 @@ def single_run(opt):
     return metric
 
 
-def many_runs(base_opt, prog_opt:dict):
+def many_runs(single_opts: dict, multi_opts: dict) -> pd.DataFrame:
     global_metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
-    prog_labels = tuple(prog_opt.keys())
-    for possible_opt in itertools.product(*prog_opt.values()):
+    multi_labels = tuple(multi_opts.keys())
+    for possible_opt in itertools.product(*multi_opts.values()):
         torch.cuda.empty_cache()
-        extra_opt = dict(zip(prog_labels, possible_opt))
-        opt = dict(vars(base_opt), **extra_opt)
-        metrics = single_run(SimpleNamespace(**opt)).assign(**extra_opt)
-        global_metrics = global_metrics.append(metrics, ignore_index=True)
+        extra_opt = dict(zip(multi_labels, possible_opt))
+        opt = dict(single_opts, **extra_opt)
+        try:
+            metrics = single_run(Namespace(**opt)).assign(**extra_opt)
+            global_metrics = global_metrics.append(metrics, ignore_index=True)
+        except (RuntimeError, Exception):
+            logging.exception("Bad run...")
     return global_metrics
 
 
 def test():
-    base_opt = SimpleNamespace(
+    base_opt = Namespace(
         sim_name="TNG300-1",
         mass_range="MASS_1.00e+12_5.00e+12_MSUN",
         n_voxel=128,
