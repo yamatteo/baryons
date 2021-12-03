@@ -1,7 +1,7 @@
 from argparse import Namespace
 
 defaults = Namespace(
-    b1=0.5,
+    b1=0.9,
     b2=0.999,
     batch_size=2,
     channels=1,
