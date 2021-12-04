@@ -1,9 +1,10 @@
 /*/__pycache__/
 /.idea/
 /.ipynb_checkpoints/
+/data/
 /images/
 /saved_models/
 
-*.log
 
+*.log
 *:Zone.Identifier
