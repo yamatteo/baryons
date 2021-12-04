@@ -13,9 +13,11 @@ import glob
 
 def voxelize(path, nvoxel):
     particle_filenames = glob.glob(os.path.join(path, "halos", "halo_*_particles_from_hdf5.csv"))
-    os.makedirs(os.path.join(path, f"nvoxel_{nvoxel}"), exist_ok=True)
+    os.makedirs(os.path.join(path, f"nvoxel_{nvoxel}", "train"), exist_ok=True)
+    os.makedirs(os.path.join(path, f"nvoxel_{nvoxel}", "valid"), exist_ok=True)
+    os.makedirs(os.path.join(path, f"nvoxel_{nvoxel}", "test"), exist_ok=True)
 
-    for particle_filename in particle_filenames:
+    for i, particle_filename in enumerate(particle_filenames):
         # halo_id = particle_filename[5:-24]
         # voxel_filename = 'halo_' + halo_id + '_nvoxel_' + str(nvoxel) + '.csv'  # output file
         voxel_filename = os.path.basename(particle_filename).replace("particles_from_hdf5", f"nvoxel_{nvoxel}")
@@ -46,4 +48,9 @@ def voxelize(path, nvoxel):
 
         df_out = pd.DataFrame(list(grouped.groups.keys()), columns=['gas/nogas', 'Xvox', 'Yvox', 'Zvox'])
         df_out['Mvox'] = np.asarray(grouped.sum())
-        df_out.to_csv(os.path.join(path, f"nvoxel_{nvoxel}", voxel_filename), index=False)
+        mode = {
+            0: "train",
+            1: "valid",
+            2: "test",
+        }[i % 3]
+        df_out.to_csv(os.path.join(path, f"nvoxel_{nvoxel}", mode, voxel_filename), index=False)
