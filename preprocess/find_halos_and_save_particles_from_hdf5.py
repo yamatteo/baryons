@@ -66,7 +66,10 @@ def find_halos(
         "TNG100-3": 3.2e8 / hsmall,
     }[sim_name]
 
-    prep_path = f"{sim_name}_SNAP{snap_num:03d}_MASS{mass_min:.2e}_{mass_max:.2e}_NGASMIN{n_gas_min}"
+    prep_path = os.path.join(
+        f"{sim_name}_SNAP{snap_num:03d}_MASS{mass_min:.2e}_{mass_max:.2e}_NGASMIN{n_gas_min}",
+        "halos",
+    )
     os.makedirs(os.path.join(data_path, prep_path), exist_ok=True)
 
     if os.path.exists(os.path.join(data_path, prep_path, "ids.npy")):
