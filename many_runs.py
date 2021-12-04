@@ -105,7 +105,7 @@ if __name__ == "__main__":
         "--root",
         type=str,
         default=os.getcwd(),
-        help="path -- folder where data/ is",
+        help="path -- folder where dataset/ is",
     )
     parser.add_argument(
         "--sample_interval",

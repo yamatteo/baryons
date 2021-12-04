@@ -10,7 +10,7 @@ SHRINK_FACTOR = 2
 class Dataset3D(torch.utils.data.Dataset):
 
     def __init__(self, sim_name, mass_range, n_voxel, mode, transforms):
-        path = os.path.join("data", sim_name, mass_range, f"NVOXEL_{n_voxel * SHRINK_FACTOR}", mode.upper())
+        path = os.path.join("dataset", sim_name, mass_range, f"NVOXEL_{n_voxel * SHRINK_FACTOR}", mode.upper())
         self.n_voxel = n_voxel
         self.transform = torchvision.transforms.Compose(transforms)
         self.files = sorted(glob.glob(os.path.join(path, "halo_*_nvoxel_*.csv")))

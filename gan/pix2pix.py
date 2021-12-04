@@ -331,7 +331,7 @@ if __name__ == "__main__":
     test()
     # parser = argparse.ArgumentParser()
     # parser.add_argument(
-    #     "--root", type=str, default=os.path.curdir, help="folder where data/ is"
+    #     "--root", type=str, default=os.path.curdir, help="folder where dataset/ is"
     # )
     # parser.add_argument("--sim_name", type=str, default="TNG300-1")
     # parser.add_argument("--mass_range", type=str, default="MASS_1.00e+12_5.00e+12_MSUN")

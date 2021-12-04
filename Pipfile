@@ -9,6 +9,8 @@ torch = "*"
 torchvision = "*"
 ipykernel = "*"
 seaborn = "*"
+h5py = "*"
+scikit-learn = "*"
 
 [dev-packages]
 
