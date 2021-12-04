@@ -58,10 +58,15 @@ def setup_gan(opt):
     dataloaders = {
         mode: DataLoader(
             Dataset3D(
+                dataset_path=opt.dataset_path,
                 sim_name=opt.sim_name,
-                mass_range=opt.mass_range,
-                n_voxel=opt.n_voxel,
-                mode="train",
+                snap_num=opt.snap_num,
+                mass_min=opt.mass_min,
+                mass_max=opt.mass_max,
+                n_gas_min=opt.n_gas_min,
+                data_path=opt.data_path,
+                nvoxel=opt.nvoxel,
+                mode=mode,
                 transforms=transformations,
             ),
             batch_size=opt.batch_size,
@@ -69,16 +74,16 @@ def setup_gan(opt):
             num_workers=opt.n_cpu,
             drop_last=True,
         )
-        for mode in ("train", "valid")
+        for mode in ("train", "valid", "test")
     }
 
     # Adversarial ground truths
-    # shape [batch_size, channels, n_voxel // patch_side, n_voxel // patch_side, n_voxel // patch_side]
+    # shape [batch_size, channels, (n_voxel // patch_side) x 3]
     gt_valid = tensor_type(
-        np.ones((opt.batch_size, opt.channels, *([opt.n_voxel // opt.patch_side] * 3)))
+        np.ones((opt.batch_size, opt.channels, *([opt.nvoxel // opt.patch_side] * 3)))
     )
     gt_fake = tensor_type(
-        np.zeros((opt.batch_size, opt.channels, *([opt.n_voxel // opt.patch_side] * 3)))
+        np.zeros((opt.batch_size, opt.channels, *([opt.nvoxel // opt.patch_side] * 3)))
     )
 
     if opt.criterion_gan == "mse":
@@ -131,12 +136,22 @@ def single_run(opt: Namespace):
         # Load pretrained models
         p2p3d.generator.load_state_dict(
             torch.load(
-                f"saved_models/{opt.dataset_name}/generator_{opt.skip_to_epoch}.pth"
+                os.path.join(
+                    "saved_models",
+                    f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}",
+                    f"nvoxel_{opt.nvoxel}",
+                    f"generator_{opt.skip_to_epoch}.pth"
+                )
             )
         )
         p2p3d.discriminator.load_state_dict(
             torch.load(
-                f"saved_models/{opt.dataset_name}/discriminator_{opt.skip_to_epoch}.pth"
+                os.path.join(
+                    "saved_models",
+                    f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}",
+                    f"nvoxel_{opt.nvoxel}",
+                    f"discriminator_{opt.skip_to_epoch}.pth"
+                )
             )
         )
 
@@ -245,17 +260,17 @@ def single_run(opt: Namespace):
                 + f" ETA: {str(time_left).split('.')[0]}"
             )
 
-            # If at sample interval save image
-            if batches_done % opt.sample_interval == 0:
-                save_report(
-                    real_dm.detach(),
-                    real_gas.detach(),
-                    fake_gas.detach(),
-                    database_name=f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}",
-                    root=opt.root,
-                    epoch=epoch,
-                    batch=i,
-                )
+            # If at sample interval save image TODO save numpy report or something useful
+            # if batches_done % opt.sample_interval == 0:
+            #     save_report(
+            #         real_dm.detach(),
+            #         real_gas.detach(),
+            #         fake_gas.detach(),
+            #         database_name=f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}",
+            #         root=opt.root,
+            #         epoch=epoch,
+            #         batch=i,
+            #     )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             dataset_name = f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}"
@@ -271,8 +286,10 @@ def single_run(opt: Namespace):
                 f"saved_models/{dataset_name}/discriminator_{epoch}.pth",
             )
 
+    # TODO see if this is helpful or necessary to free up space in the GPU
     del p2p3d
     del opt
+
     return metric
 
 

@@ -5,7 +5,7 @@ import torch
 import os
 
 import gan.pix2pix
-import gan.defaults
+import defaults
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         help="int -- epoch to start training from, loading from previous checkpoints",
     )
 
-    defaults = vars(gan.defaults.defaults)
+    defaults = vars(defaults.defaults)
     commands = vars(parser.parse_args())
     opts = dict(defaults, **commands)
     single_opts = {

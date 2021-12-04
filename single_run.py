@@ -4,7 +4,7 @@ import os
 from argparse import Namespace
 
 import gan.pix2pix
-import gan.defaults
+from defaults import defaults
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -28,7 +28,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--checkpoint_interval",
         type=int,
-        default=-1,
         help="int -- interval between model checkpoints; -1 means no checkpoint",
     )
     parser.add_argument(
@@ -61,7 +60,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_mode",
         type=str,
-        default="w",
         choices=["w", "a"],
         help="str -- log mode, either default 'w' to overwrite previous logs or 'a' to append to previous log",
     )
@@ -78,7 +76,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--n_cpu",
         type=int,
-        default=8,
         help="int -- number of cpu threads to use during batch generation",
     )
     parser.add_argument(
@@ -102,15 +99,8 @@ if __name__ == "__main__":
         help="int -- side length (voxels) for the patch of the discriminator",
     )
     parser.add_argument(
-        "--root",
-        type=str,
-        default=os.getcwd(),
-        help="path -- folder where dataset/ is",
-    )
-    parser.add_argument(
         "--sample_interval",
         type=int,
-        default=5,
         help="int -- interval between sampling of images from generators; -1 means no images",
     )
     parser.add_argument(
@@ -121,11 +111,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip_to_epoch",
         type=int,
-        default=0,
         help="int -- epoch to start training from, loading from previous checkpoints",
     )
 
-    defaults = vars(gan.defaults.defaults)
     commands = vars(parser.parse_args())
     opts = dict(defaults, **commands)
 
