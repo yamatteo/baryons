@@ -22,10 +22,11 @@ def get_periodic_coords(center, pos, Lbox):
     len_filt_2 = len(shifted_pos[periodic_filt_2])
 
     if (len_filt_1==0 and len_filt_2==0): # No need to correct
-       print('no periodic boundary conditions used')
+       # print('no periodic boundary conditions used')
+       pass
 
     else:   # At least a correction needed
-       print('boundary conditions used')
+       # print('boundary conditions used')
 
        if len_filt_1!=0:
 
