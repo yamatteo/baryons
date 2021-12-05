@@ -18,7 +18,6 @@ from argparse import Namespace
 
 from gan.dataset import Dataset3D
 
-# from gan.models import UNet, Discriminator
 from gan.dynamic_models import Discriminator, Generator, weights_init_normal
 from visualization.report import save_report
 
@@ -111,22 +110,8 @@ def setup_gan(opt):
 
 
 def single_run(opt: Namespace):
-    reload(logging)  # Avoid duplicate logging in JupyterLab
-    logging.basicConfig(
-        filename="last_run.log",
-        filemode=opt.log_mode,
-        format="%(levelname)s: %(message)s",
-        level=logging.DEBUG if opt.log_level == 'debug' else logging.INFO,
-    )
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    console.setFormatter(logging.Formatter("%(message)s"))
-    logging.getLogger().addHandler(console)
-    logging.getLogger("matplotlib.font_manager").disabled = True
-    logging.getLogger("parso.python.diff").disabled = True
-
     p2p3d = setup_gan(opt)
-    metric = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
+    metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
 
     if opt.skip_to_epoch == 0:
         # Initialize weights
@@ -245,7 +230,7 @@ def single_run(opt: Namespace):
                 seconds=batches_left * (time.time() - init_time) / batches_done
             )
 
-            metric = metric.append({
+            metrics = metrics.append({
                 "epoch": epoch + 1,
                 "time": float(time.time() - init_time),
                 "loss_d": loss_d.item(),
@@ -290,154 +275,4 @@ def single_run(opt: Namespace):
     del p2p3d
     del opt
 
-    return metric
-
-
-def many_runs(single_opts: dict, multi_opts: dict) -> pd.DataFrame:
-    global_metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
-    multi_labels = tuple(multi_opts.keys())
-    for possible_opt in itertools.product(*multi_opts.values()):
-        torch.cuda.empty_cache()
-        extra_opt = dict(zip(multi_labels, possible_opt))
-        opt = dict(single_opts, **extra_opt)
-        try:
-            metrics = single_run(Namespace(**opt)).assign(**extra_opt)
-            global_metrics = global_metrics.append(metrics, ignore_index=True)
-        except (RuntimeError, Exception):
-            logging.exception("Bad run...")
-    return global_metrics
-
-
-def test():
-    base_opt = Namespace(
-        sim_name="TNG300-1",
-        mass_range="MASS_1.00e+12_5.00e+12_MSUN",
-        n_voxel=128,
-        channels=1,
-
-        generator_depth=5,
-        patch_side=16,
-        num_filters=4,
-        criterion_gan=torch.nn.MSELoss(),
-        criterion_pixelwise=torch.nn.L1Loss(),
-        lambda_pixel=100,
-
-        skip_to_epoch=0,
-        n_epochs=20,
-        batch_size=2,
-
-        lr=0.0002,
-        b1=0.5,
-        b2=0.999,
-        decay_epoch=100,
-
-        root=os.getcwd(),
-        n_cpu=8,
-        sample_interval=5,
-        checkpoint_interval=-1,
-        log_level=logging.INFO,
-        cuda=True,
-    )
-    gm = many_runs(base_opt, {
-        "generator_depth": (4, 5, 6),
-        "num_filters": (2, 4, 8),
-    })
-    print(gm)
-
-if __name__ == "__main__":
-    test()
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument(
-    #     "--root", type=str, default=os.path.curdir, help="folder where dataset/ is"
-    # )
-    # parser.add_argument("--sim_name", type=str, default="TNG300-1")
-    # parser.add_argument("--mass_range", type=str, default="MASS_1.00e+12_5.00e+12_MSUN")
-    # parser.add_argument(
-    #     "--n_voxel", type=int, default=128, help="number of voxels set for images"
-    # )
-    # parser.add_argument(
-    #     "--skip_to_epoch", type=int, default=0, help="epoch to start training from"
-    # )
-    # parser.add_argument(
-    #     "--n_epochs", type=int, default=20, help="number of epochs of training"
-    # )
-    # parser.add_argument(
-    #     "--dataset_name", type=str, default="facades", help="name of the dataset"
-    # )
-    # parser.add_argument("--batch_size", type=int, default=2, help="size of the batches")
-    # parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-    # parser.add_argument(
-    #     "--b1",
-    #     type=float,
-    #     default=0.5,
-    #     help="adam: decay of first order momentum of gradient",
-    # )
-    # parser.add_argument(
-    #     "--b2",
-    #     type=float,
-    #     default=0.999,
-    #     help="adam: decay of first order momentum of gradient",
-    # )
-    # parser.add_argument(
-    #     "--decay_epoch",
-    #     type=int,
-    #     default=100,
-    #     help="epoch from which to start lr decay",
-    # )
-    # parser.add_argument(
-    #     "--generator_depth",
-    #     type=int,
-    #     default=5,
-    #     help="depth of the generator architecture",
-    # )
-    # parser.add_argument(
-    #     "--n_cpu",
-    #     type=int,
-    #     default=8,
-    #     help="number of cpu threads to use during batch generation",
-    # )
-    # # parser.add_argument("--img_height", type=int, default=256, help="size of image height")
-    # # parser.add_argument("--img_width", type=int, default=256, help="size of image width")
-    # parser.add_argument(
-    #     "--channels", type=int, default=1, help="number of image channels"
-    # )
-    # parser.add_argument("--patch_side", type=int, default=16)
-    # parser.add_argument(
-    #     "--sample_interval",
-    #     type=int,
-    #     default=5,
-    #     help="interval between sampling of images from generators",
-    # )
-    # parser.add_argument(
-    #     "--checkpoint_interval",
-    #     type=int,
-    #     default=-1,
-    #     help="interval between model checkpoints",
-    # )
-    # parser.add_argument(
-    #     "--log_level",
-    #     type=int,
-    #     default=logging.INFO,
-    # )
-    # parser.add_argument(
-    #     "--cuda",
-    #     type=bool,
-    #     default=True if torch.cuda.is_available() else False,
-    # )
-    # parser.add_argument(
-    #     "--num_filters",
-    #     type=int,
-    #     default=4,
-    # )
-    # parser.add_argument(
-    #     "--lambda_pixel",
-    #     type=int,
-    #     default=100,
-    # )
-    #
-    # opt = parser.parse_args()
-    #
-    # vars(opt)["criterion_gan"] = torch.nn.MSELoss()
-    # vars(opt)["criterion_pixelwise"] = torch.nn.L1Loss()
-    #
-    # single_run(opt)
+    return metrics

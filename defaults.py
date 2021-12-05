@@ -1,5 +1,4 @@
 from argparse import Namespace
-from os import getcwd
 
 runtime_options = Namespace(
     batch_size=4,
@@ -10,7 +9,7 @@ runtime_options = Namespace(
     log_mode="w",
     n_cpu=2,
     n_epochs=5,
-    root=getcwd(),
+    root=".",
     sample_interval=5,
     skip_to_epoch=0,
 )

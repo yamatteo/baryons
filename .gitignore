@@ -9,3 +9,6 @@
 
 *.log
 *:Zone.Identifier
+last_run.csv
+last_run.log
+/options.py
