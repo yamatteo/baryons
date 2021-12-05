@@ -47,7 +47,6 @@ def find_ids(base_path, snap_num, mass_min, mass_max, hsmall, n_gas_min):
 def find_halos(
     dataset_path, sim_name, snap_num, mass_min, mass_max, n_gas_min, data_path
 ):
-    logging.info(f"Finding halos ({mass_min = }, {mass_max = }, {n_gas_min = })...")
     # mass_min = 1e12  # Illustris mass units in 1e10 Msun
     # mass_max = 5e12
     # n_gas_min = 500
@@ -78,6 +77,8 @@ def find_halos(
     else:
         ids = find_ids(base_path, snap_num, mass_min, mass_max, hsmall, n_gas_min)
         np.save(os.path.join(data_path, prep_path, "ids.npy"), ids)
+
+    logging.info(f"Finding halos ({mass_min = }, {mass_max = }, {n_gas_min = })...")
 
     ## RETREIVE PARTICLES AND SAVE TO CVS
     Lbox = il.groupcat.loadHeader(base_path, snap_num)["BoxSize"]  # kpc/h

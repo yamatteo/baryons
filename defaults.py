@@ -37,7 +37,7 @@ network_options = Namespace(
     patch_side=16,
 )
 
-defaults = {
+opts = {
     **vars(runtime_options),
     **vars(simulation_options),
     **vars(network_options),

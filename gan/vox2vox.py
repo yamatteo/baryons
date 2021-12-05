@@ -23,7 +23,7 @@ from visualization.report import save_report
 
 
 def setup_gan(opt):
-    logging.info(f"Setting up GAN: {opt}")
+    logging.info(f"Setting up GAN")
 
     tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
 
