@@ -4,6 +4,7 @@
 /data/
 /dataset/
 /images/
+/run_*/
 /saved_models/
 
 

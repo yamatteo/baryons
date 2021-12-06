@@ -16,12 +16,15 @@ import gan.vox2vox
 def load_opts():
     try:
         from options import opts
+
         opts["cuda"] = torch.cuda.is_available()
         opts["run_id"] = hashlib.md5(str(opts).encode("utf8")).hexdigest()
         opts["run_path"] = os.path.join(opts["output_path"], f"run_{opts['run_id']}")
         return opts
     except ImportError:
-        raise ImportError(f"No module options.py found in {os.getcwd()}. Copy, rename and modify defaults.py")
+        raise ImportError(
+            f"No module options.py found in {os.getcwd()}. Copy, rename and modify defaults.py"
+        )
 
 
 def setup_logging(opts: dict):
@@ -75,7 +78,7 @@ if __name__ == "__main__":
     multi_labels = tuple(multi_opts.keys())
 
     try:
-        with open(os.path.join(opts["run_path"], "state"), 'rb') as state_file:
+        with open(os.path.join(opts["run_path"], "state"), "rb") as state_file:
             state = pickle.load(state_file)
             global_metrics = state["global_metrics"]
             completed = state["completed"]
@@ -94,7 +97,7 @@ if __name__ == "__main__":
             )
             torch.cuda.empty_cache()
             extra_opt = dict(zip(multi_labels, possible_opt))
-            opt = dict(simple_opts, **extra_opt)
+            opt = dict(simple_opts, **extra_opt, run_index=i)
             metrics = gan.vox2vox.single_run(Namespace(**opt)).assign(**extra_opt)
             global_metrics = global_metrics.append(metrics, ignore_index=True)
 
@@ -105,7 +108,9 @@ if __name__ == "__main__":
                 completed=i,
             )
 
-            with open(os.path.join(opts["run_path"], "state"), 'wb') as state_file:
+            with open(os.path.join(opts["run_path"], "state"), "wb") as state_file:
                 pickle.dump(state, state_file)
 
-    global_metrics.to_csv(os.path.join(opts["run_path"], "global_metrics.csv"), index=False)
+    global_metrics.to_csv(
+        os.path.join(opts["run_path"], "global_metrics.csv"), index=False
+    )

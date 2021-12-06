@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import glob
 import itertools
 import logging
 import os
@@ -19,7 +20,7 @@ from argparse import Namespace
 from gan.dataset import Dataset3D
 
 from gan.dynamic_models import Discriminator, Generator, weights_init_normal
-from visualization.report import save_report
+from gan.discriminator import Discriminator as AltDiscriminator
 
 
 def setup_gan(opt):
@@ -34,7 +35,7 @@ def setup_gan(opt):
         depth=opt.generator_depth,
     )
 
-    discriminator = Discriminator(channels=opt.channels)
+    discriminator = AltDiscriminator(3, 2, 0, "leaky", "instance", tensor_type)
 
     if opt.cuda is True:
         generator = generator.cuda()
@@ -109,42 +110,61 @@ def setup_gan(opt):
     )
 
 
+def save_checkpoint(epoch, opt, v2v):
+    torch.save(
+        v2v.generator.state_dict(),
+        os.path.join(opt.run_path, f"generator_{opt.run_index}_{epoch}.pth"),
+    )
+    torch.save(
+        v2v.discriminator.state_dict(),
+        os.path.join(opt.run_path, f"discriminator_{opt.run_index}_{epoch}.pth"),
+    )
+
+
+def load_checkpoint(epoch, opt, v2v):
+    logging.info(f"Loading pretrained models from epoch {epoch}")
+    v2v.generator.load_state_dict(
+        torch.load(os.path.join(opt.run_path, f"generator_{opt.run_index}_{epoch}.pth"))
+    )
+    v2v.discriminator.load_state_dict(
+        torch.load(
+            os.path.join(opt.run_path, f"discriminator_{opt.run_index}_{epoch}.pth")
+        )
+    )
+
+
+def get_last_checkpoint(opt):
+    generators = glob.glob(
+        os.path.join(opt.run_path, f"generator_{opt.run_index}_*.pth")
+    )
+    prestrip = lambda s: s.removeprefix(
+        os.path.join(opt.run_path, f"generator_{opt.run_index}_")
+    )
+    poststrip = lambda s: s.removesuffix(".pth")
+    if generators:
+        return max(int(poststrip(prestrip(filename))) for filename in generators)
+    else:
+        return -1
+
+
 def single_run(opt: Namespace):
     p2p3d = setup_gan(opt)
     metrics = pd.DataFrame(columns=["epoch", "time", "loss_g", "loss_d"])
 
-    if opt.skip_to_epoch == 0:
+    start_from_epoch = get_last_checkpoint(opt)
+    if opt.may_resume is True and start_from_epoch > 0:
+        load_checkpoint(start_from_epoch, opt, p2p3d)
+    else:
         # Initialize weights
+        start_from_epoch = 0
         p2p3d.generator.apply(weights_init_normal)
         p2p3d.discriminator.apply(weights_init_normal)
-    else:
-        # Load pretrained models
-        p2p3d.generator.load_state_dict(
-            torch.load(
-                os.path.join(
-                    "saved_models",
-                    f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}",
-                    f"nvoxel_{opt.nvoxel}",
-                    f"generator_{opt.skip_to_epoch}.pth"
-                )
-            )
-        )
-        p2p3d.discriminator.load_state_dict(
-            torch.load(
-                os.path.join(
-                    "saved_models",
-                    f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}",
-                    f"nvoxel_{opt.nvoxel}",
-                    f"discriminator_{opt.skip_to_epoch}.pth"
-                )
-            )
-        )
 
     init_time = time.time()
 
     logging.info(f"Training begins...")
 
-    for epoch in range(opt.skip_to_epoch, opt.n_epochs):
+    for epoch in range(start_from_epoch, opt.n_epochs):
 
         for i, batch in enumerate(p2p3d.dataloaders["train"]):  # batch is a dictionary
 
@@ -160,63 +180,24 @@ def single_run(opt: Namespace):
             #  Train Generator
             # ------------------
 
-            logging.debug("Starting training Generator")
-
             p2p3d.g_optimizer.zero_grad()
 
-            # GAN loss
-            fake_gas = p2p3d.generator(real_dm)
-            logging.debug(f"Generated fake_gas - shape {fake_gas.shape = }")
+            pred_gas = p2p3d.generator(real_dm)
+            loss_gen = p2p3d.discriminator.evaluate(real_dm, pred_gas)
 
-            pred_fake = p2p3d.discriminator(fake_gas, real_dm)
-            logging.debug(
-                f"Made fake prediction of discriminator - shape {pred_fake.shape =}"
-            )
-
-            loss_gan = p2p3d.criterion_gan(pred_fake, p2p3d.gt_valid)
-            logging.debug(f"{loss_gan = }")
-
-            loss_pixel = p2p3d.criterion_pixelwise(fake_gas, real_gas)
-            logging.debug(f"{loss_pixel = }")
-
-            loss_g = loss_gan + opt.lambda_pixel * loss_pixel
-            logging.debug(f"{loss_g = }")
-
-            loss_g.backward()
-            logging.debug("loss_G.backward() done")
-
+            loss_gen.backward()
             p2p3d.g_optimizer.step()
-            logging.debug("optimizer_G.step() done")
 
             # ---------------------
             #  Train Discriminator
             # ---------------------
 
-            if epoch == 0:
-                logging.debug("Starting training Discriminator")
-
             p2p3d.d_optimizer.zero_grad()
 
-            # Real loss
-            pred_real = p2p3d.discriminator(real_gas, real_dm)
-            loss_real = p2p3d.criterion_gan(pred_real, p2p3d.gt_valid)
-            logging.debug(
-                f"Generated pred_real (shape {pred_real.shape}) - loss {loss_real:0.2}"
-            )
+            # pred_gas = p2p3d.generator(real_dm)
+            loss_dis = p2p3d.discriminator.loss(real_dm, real_gas, pred_gas.detach())
 
-            # Fake loss
-            pred_fake = p2p3d.discriminator(
-                fake_gas.detach(), real_dm
-            )  # CP: Detach from gradient calculation
-            loss_fake = p2p3d.criterion_gan(pred_fake, p2p3d.gt_fake)
-            logging.debug(
-                f"Generated pred_fake (shape {pred_fake.shape}) - loss {loss_fake:0.2}"
-            )
-
-            # Total loss
-            loss_d = 0.5 * (loss_real + loss_fake)
-
-            loss_d.backward()
+            loss_dis.backward()
             p2p3d.d_optimizer.step()
 
             # --------------
@@ -230,18 +211,21 @@ def single_run(opt: Namespace):
                 seconds=batches_left * (time.time() - init_time) / batches_done
             )
 
-            metrics = metrics.append({
-                "epoch": epoch + 1,
-                "time": float(time.time() - init_time),
-                "loss_d": loss_d.item(),
-                "loss_g": loss_g.item()
-            }, ignore_index=True)
+            metrics = metrics.append(
+                {
+                    "epoch": epoch + 1,
+                    "time": float(time.time() - init_time),
+                    "loss_gen": loss_gen.item(),
+                    "loss_dis": loss_dis.item(),
+                },
+                ignore_index=True,
+            )
 
             logging.info(
                 f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]"
                 + f" [Batch {i + 1}/{len(p2p3d.dataloaders['train'])}]"
-                + f" [D loss: {loss_d.item():.3e}]"
-                + f" [G loss: {loss_g.item():.3e}, pixel: {loss_pixel.item():.3e}, adv: {loss_gan.item():.3e}]"
+                + f" [D loss: {loss_dis.item():.3e}]"
+                + f" [G loss: {loss_gen.item():.3e}]"
                 + f" ETA: {str(time_left).split('.')[0]}"
             )
 
@@ -258,18 +242,7 @@ def single_run(opt: Namespace):
             #     )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
-            dataset_name = f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}"
-            os.makedirs(
-                os.path.join(opt.root, "saved_models", dataset_name), exist_ok=True
-            )
-            torch.save(
-                p2p3d.generator.state_dict(),
-                f"saved_models/{dataset_name}/generator_{epoch}.pth",
-            )
-            torch.save(
-                p2p3d.discriminator.state_dict(),
-                f"saved_models/{dataset_name}/discriminator_{epoch}.pth",
-            )
+            save_checkpoint(epoch, opt, p2p3d)
 
     # TODO see if this is helpful or necessary to free up space in the GPU
     del p2p3d
