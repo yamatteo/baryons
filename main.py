@@ -4,6 +4,8 @@ import itertools
 import logging
 import os
 import pprint
+import pickle
+import hashlib
 
 import pandas as pd
 import torch
@@ -12,20 +14,18 @@ import gan.vox2vox
 
 
 def load_opts():
-    import defaults
-
     try:
-        import options
-
-        opts = dict(defaults.opts, **options.opts)
+        from options import opts
+        opts["cuda"] = torch.cuda.is_available()
+        opts["run_id"] = hashlib.md5(str(opts).encode("utf8")).hexdigest()
+        opts["run_path"] = os.path.join(opts["output_path"], f"run_{opts['run_id']}")
+        return opts
     except ImportError:
-        opts = dict(defaults.opts)
-    opts["cuda"] = torch.cuda.is_available()
-    return opts
+        raise ImportError(f"No module options.py found in {os.getcwd()}. Copy, rename and modify defaults.py")
 
 
 def setup_logging(opts: dict):
-    with open(os.path.join(opts["root"], "last_run.log"), mode="w") as f:
+    with open(os.path.join(opts["output_path"], "last_run.log"), mode="w") as f:
         f.writelines(
             [
                 f"Running {__file__}",
@@ -49,13 +49,18 @@ def setup_logging(opts: dict):
     console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(console)
-    logging.getLogger("matplotlib.font_manager").disabled = True
-    logging.getLogger("parso.python.diff").disabled = True
+    # logging.getLogger("matplotlib.font_manager").disabled = True
+    # logging.getLogger("parso.python.diff").disabled = True
 
 
 if __name__ == "__main__":
     opts = load_opts()
     setup_logging(opts)
+
+    os.makedirs(opts["run_path"], exist_ok=True)
+
+    if os.path.exists(os.path.join(opts["run_path"], "global_metrics.csv")):
+        logging.exception("This run is already completed")
 
     simple_opts = {
         key: value
@@ -68,20 +73,39 @@ if __name__ == "__main__":
     }
 
     multi_labels = tuple(multi_opts.keys())
-    global_metrics = pd.DataFrame(
-        columns=["epoch", "time", "loss_g", "loss_d", *multi_labels]
-    )
-    for possible_opt in itertools.product(*multi_opts.values()):
-        logging.info(
-            f"Launching run with options:\n{pprint.pformat({key: value for (key, value) in zip(multi_labels, possible_opt)}, indent=4)}"
+
+    try:
+        with open(os.path.join(opts["run_path"], "state"), 'rb') as state_file:
+            state = pickle.load(state_file)
+            global_metrics = state["global_metrics"]
+            completed = state["completed"]
+            logging.info(f"Resume from run {completed}")
+    except (FileNotFoundError, KeyError):
+        state = None
+        global_metrics = pd.DataFrame(
+            columns=["epoch", "time", "loss_g", "loss_d", *multi_labels]
         )
-        torch.cuda.empty_cache()
-        extra_opt = dict(zip(multi_labels, possible_opt))
-        opt = dict(simple_opts, **extra_opt)
-        try:
+        completed = -1
+
+    for i, possible_opt in enumerate(itertools.product(*multi_opts.values())):
+        if i > completed:
+            logging.info(
+                f"Launching run {i} with options:\n{pprint.pformat({key: value for (key, value) in zip(multi_labels, possible_opt)}, indent=4)}"
+            )
+            torch.cuda.empty_cache()
+            extra_opt = dict(zip(multi_labels, possible_opt))
+            opt = dict(simple_opts, **extra_opt)
             metrics = gan.vox2vox.single_run(Namespace(**opt)).assign(**extra_opt)
             global_metrics = global_metrics.append(metrics, ignore_index=True)
-        except (RuntimeError, Exception):
-            logging.exception("Bad run...")
 
-    global_metrics.to_csv(os.path.join(opts["root"], "last_run.csv"), index=False)
+            state = dict(
+                simple_opts=simple_opts,
+                multi_opts=multi_opts,
+                global_metrics=global_metrics,
+                completed=i,
+            )
+
+            with open(os.path.join(opts["run_path"], "state"), 'wb') as state_file:
+                pickle.dump(state, state_file)
+
+    global_metrics.to_csv(os.path.join(opts["run_path"], "global_metrics.csv"), index=False)
