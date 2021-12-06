@@ -23,6 +23,7 @@ from gan.dataset import Dataset3D
 
 from gan.dynamic_models import Discriminator, Generator, weights_init_normal
 from gan.discriminator import Discriminator as AltDiscriminator
+from visualization.report import save_sample
 
 
 def make_metric(name):
@@ -220,6 +221,7 @@ def get_last_checkpoint(opt):
         return -1
 
 
+
 def single_run(opt: Namespace):
     vv = Vox2Vox(opt)
     metrics = pd.DataFrame(columns=["epoch", "time", "loss_gen", "loss_dis", *vv.metrics.keys()])
@@ -303,23 +305,15 @@ def single_run(opt: Namespace):
                 + f" ETA: {str(time_left).split('.')[0]}"
             )
 
-            # If at sample interval save image TODO save numpy report or something useful
-            # if batches_done % opt.sample_interval == 0:
-            #     save_report(
-            #         real_dm.detach(),
-            #         real_gas.detach(),
-            #         fake_gas.detach(),
-            #         database_name=f"{opt.sim_name}__{opt.mass_range}__{opt.n_voxel}",
-            #         root=opt.root,
-            #         epoch=epoch,
-            #         batch=i,
-            #     )
+        if epoch % opt.sample_interval == 0:
+            save_sample(
+                epoch,
+                opt,
+                real_gas.detach(),
+                pred_gas.detach(),
+            )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             save_checkpoint(epoch, opt, vv)
-
-    # TODO see if this is helpful or necessary to free up space in the GPU
-    del vv
-    del opt
 
     return metrics
