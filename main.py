@@ -68,7 +68,7 @@ if __name__ == "__main__":
     simple_opts = {
         key: value
         for (key, value) in opts.items()
-        if isinstance(value, (int, float, str))
+        if isinstance(value, (int, float, str, tuple))
     }
 
     multi_opts = {
