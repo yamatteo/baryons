@@ -205,3 +205,34 @@ class MultiMSE(nn.Module):
     def loss(self, dm, real_gas, pred_gas):
         return self.tensor_type([0.]).requires_grad_()
 
+class FakeOptimizer():
+    def __init__(self):
+        pass
+
+    def step(self):
+        pass
+
+    def zero_grad(self):
+        pass
+
+
+def make_discriminator(opt):
+    tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
+    if opt.discriminator == "original":
+        discriminator = Original(opt)
+    elif opt.discriminator == "monopatch":
+        discriminator = MonoPatch(3, 2, 0, "leaky", "instance", tensor_type)
+    elif opt.discriminator == "onlymse":
+        discriminator = OnlyMSE(opt)
+    elif opt.discriminator == "multimse":
+        discriminator = MultiMSE(opt)
+
+    if opt.cuda is True:
+        discriminator = discriminator.cuda()
+    if opt.discriminator in ("original", "monopatch"):
+        optimizer = torch.optim.Adam(
+                discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+            )
+    elif opt.discriminator in ("onlymse", "multimse"):
+        optimizer = FakeOptimizer()
+    return discriminator, optimizer

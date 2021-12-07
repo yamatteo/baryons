@@ -24,6 +24,7 @@ from gan.dataset import Dataset3D
 from gan.dynamic_models import Generator, weights_init_normal
 import gan.discriminator as discriminators
 from gan.generator import make_generator
+from gan.discriminator import make_discriminator
 from visualization.report import save_sample
 
 
@@ -47,27 +48,19 @@ class Vox2Vox:
 
         self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
 
-        self.generator = make_generator(opt)
+        self.generator, self.g_optimizer = make_generator(opt)
+        self.discriminator, self.d_optimizer = make_discriminator(opt)
 
-        if opt.discriminator == "original":
-            self.discriminator = discriminators.Original(opt)
-        elif opt.discriminator == "monopatch":
-            self.discriminator = discriminators.MonoPatch(3, 2, 0, "leaky", "instance", self.tensor_type)
-        elif opt.discriminator == "onlymse":
-            self.discriminator = discriminators.OnlyMSE(opt)
-        elif opt.discriminator == "multimse":
-            self.discriminator = discriminators.MultiMSE(opt)
+        # if opt.cuda is True:
+            # self.generator = self.generator.cuda()
+            # self.discriminator = self.discriminator.cuda()
 
-        if opt.cuda is True:
-            self.generator = self.generator.cuda()
-            self.discriminator = self.discriminator.cuda()
-
-        self.g_optimizer = torch.optim.Adam(
-            self.generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-        )
-        self.d_optimizer = torch.optim.Adam(
-            self.discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-        )
+        # self.g_optimizer = torch.optim.Adam(
+        #     self.generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+        # )
+        # self.d_optimizer = torch.optim.Adam(
+        #     self.discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+        # )
 
         transformations = [
             # CP: transforms.Resize((opt.img_height, opt.img_width), Image.BICUBIC),
@@ -155,7 +148,7 @@ def single_run(opt: Namespace):
 
     for epoch in range(start_from_epoch, opt.n_epochs):
 
-        for i, batch in enumerate(vv.dataloaders["train"]):  # batch is a dictionary
+        for i, batch in enumerate(vv.dataloaders[opt.train_mode]):  # batch is a dictionary
 
             logging.debug(f"Starting batch {i}")
 
@@ -215,7 +208,7 @@ def single_run(opt: Namespace):
 
             logging.info(
                 f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]"
-                + f" [Batch {i + 1}/{len(vv.dataloaders['train'])}]"
+                + f" [Batch {i + 1}/{len(vv.dataloaders[opt.train_mode])}]"
                 + f" [D loss: {loss_dis.item():.3e}]"
                 + f" [G loss: {loss_gen.item():.3e}]"
                 + f" ETA: {str(time_left).split('.')[0]}"

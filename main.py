@@ -78,12 +78,13 @@ if __name__ == "__main__":
     multi_labels = tuple(multi_opts.keys())
 
     try:
+        assert opts["may_resume"]
         with open(os.path.join(opts["run_path"], "state"), "rb") as state_file:
             state = pickle.load(state_file)
             global_metrics = state["global_metrics"]
             completed = state["completed"]
             logging.info(f"Resume from run {completed}")
-    except (FileNotFoundError, KeyError):
+    except (FileNotFoundError, KeyError, AssertionError):
         state = None
         global_metrics = pd.DataFrame(
             columns=["epoch", "time", "loss_g", "loss_d", *multi_labels]

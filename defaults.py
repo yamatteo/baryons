@@ -1,44 +1,48 @@
 from argparse import Namespace
 
-runtime_options = Namespace(
-    batch_size=4,
-    checkpoint_interval=-1,
-    data_path="data",
-    dataset_path="dataset",
-    log_level="debug",
+runtime_options = dict(
+    batch_size=64,
+    checkpoint_interval=10,
+    data_path=None,
+    dataset_path=None,
+    log_level="info",
     log_mode="w",
     n_cpu=2,
-    n_epochs=5,
-    root=".",
-    sample_interval=5,
-    skip_to_epoch=0,
+    n_epochs=100,
+    output_path=None,
+    sample_interval=10,
+    may_resume=True,
+    train_mode="train",
 )
 
-simulation_options = Namespace(
-    sim_name="TNG100-3",
+simulation_options = dict(
+    sim_name="TNG300-1",
     snap_num=99,
     mass_min=1e12,
     mass_max=5e12,
     n_gas_min=500,
 )
 
-network_options = Namespace(
+network_options = dict(
     b1=0.9,
     b2=0.999,
     channels=1,
     criterion_gan="mse",
     criterion_pixelwise="l1",
     decay_epoch=100,
+    generator=["flat", "original"],
     generator_depth=4,
+    discriminator=["multimse", "original"],
     lambda_pixel=100,
     lr=0.0002,
     num_filters=4,
-    nvoxel=128,
-    patch_side=16,
+    nvoxel=64,
+    patch_side=8,
+    metrics=("mse", "l1"),
 )
 
 opts = {
-    **vars(runtime_options),
-    **vars(simulation_options),
-    **vars(network_options),
+    **runtime_options,
+    **simulation_options,
+    **network_options,
 }
