@@ -231,3 +231,4 @@ def preprocess(opt):
                 / mode
                 / f"halo_{halo_id}_gas_coalesced.npy",
             )
+    return ids
