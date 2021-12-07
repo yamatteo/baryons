@@ -85,9 +85,10 @@ def find_halos(
 
     # number of wanted halos
     nhalos = len(ids)
+    # npmegahalo = np.zeros((0, 6))
 
-    for i in range(nhalos):
-        halo_id = ids[i]
+    for halo_id in ids:
+        # halo_id = ids[i]
         # print('\nhalo = ', halo_id)
         start = time.time()
 
@@ -148,10 +149,17 @@ def find_halos(
             index=False,
         )
 
-        # CHECK
-        # print('num gas particles = ', np_gas)
-        # print('num dm particles  = ', np_dm)
+        # npmegahalo = np.vstack([
+        #     npmegahalo,
+        #     np.hstack([np.repeat(halo_id, np_dm).reshape((np_dm, 1)), dfdm]),
+        #     np.hstack([np.repeat(halo_id, np_gas).reshape((np_gas, 1)), dfgas]),
+        # ])
 
-    # note:
-    # print('DM particle mass = ', mdm)
-    # print('simulation path = ', base_path)
+    # np.save(
+    #     os.path.join(
+    #         data_path,
+    #         f"{sim_name}_SNAP{snap_num:03d}_MASS{mass_min:.2e}_{mass_max:.2e}_NGASMIN{n_gas_min}",
+    #         f"halos.npy"
+    #     ),
+    #     npmegahalo,
+    # )
