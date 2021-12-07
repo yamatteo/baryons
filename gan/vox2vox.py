@@ -55,8 +55,8 @@ class Vox2Vox:
             self.discriminator = discriminators.MonoPatch(3, 2, 0, "leaky", "instance", self.tensor_type)
         elif opt.discriminator == "onlymse":
             self.discriminator = discriminators.OnlyMSE(opt)
-        elif opt.discriminator == "doublemse":
-            self.discriminator = discriminators.DoubleMSE(opt)
+        elif opt.discriminator == "multimse":
+            self.discriminator = discriminators.MultiMSE(opt)
 
         if opt.cuda is True:
             self.generator = self.generator.cuda()

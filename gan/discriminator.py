@@ -184,9 +184,9 @@ class OnlyMSE(nn.Module):
     def loss(self, dm, real_gas, pred_gas):
         return self.tensor_type([0.]).requires_grad_()
 
-class DoubleMSE(nn.Module):
+class MultiMSE(nn.Module):
     def __init__(self, opt):
-        super(DoubleMSE, self).__init__()
+        super(MultiMSE, self).__init__()
         self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
 
         # channels = 1
@@ -198,7 +198,9 @@ class DoubleMSE(nn.Module):
         return None
 
     def evaluate(self, real_dm, real_gas, pred_gas):
-        return F.mse_loss(real_gas, pred_gas) + F.mse_loss(F.avg_pool3d(real_gas, kernel_size=4), F.avg_pool3d(pred_gas, kernel_size=4))
+        return F.mse_loss(real_gas, pred_gas) \
+               + F.mse_loss(F.max_pool3d(real_gas, kernel_size=4), F.max_pool3d(pred_gas, kernel_size=4)) \
+               + F.mse_loss(F.max_pool3d(real_gas, kernel_size=16), F.max_pool3d(pred_gas, kernel_size=16))
 
     def loss(self, dm, real_gas, pred_gas):
         return self.tensor_type([0.]).requires_grad_()
