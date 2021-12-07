@@ -23,16 +23,19 @@ def select_slice(*tensors, random_dims=(0, 1), orthogonal_dim: int = 2, index: i
 
     # By default, the index of the slice is not provided so it will be selected based on the weight constrain
     if index is None:
-        for tensor in tensors:
-            valid_indexes = np.argwhere(torch.sum(tensor, dim=dims) > weight).squeeze().tolist()
-            try:
-                # When indexes is already defined, intersect it with the valid indexes of the new tensor
-                indexes.intersection_update(valid_indexes)
-            except NameError:
-                # For the first tensor in the list, `indexes` is defined as the set of valid indexes (the ones
-                # respecting the weight constrain)
-                indexes = set(valid_indexes)
-        index = choice(list(indexes))
+        sup = torch.max(torch.sum(tensors[0], dim=dims))
+        valid_indexes = np.argwhere(torch.sum(tensors[0], dim=dims) >= sup).squeeze().tolist()
+        # try:
+        #     # When indexes is already defined, intersect it with the valid indexes of the new tensor
+        #     indexes.intersection_update(valid_indexes)
+        # except NameError:
+        #     # For the first tensor in the list, `indexes` is defined as the set of valid indexes (the ones
+        #     # respecting the weight constrain)
+        #     indexes = set(valid_indexes)
+        if isinstance(valid_indexes, int):
+            index = valid_indexes
+        elif isinstance(valid_indexes, list):
+            index = choice(list(valid_indexes))
 
     for d in random_dims:
         start = randrange(tensors[0].shape[d])

@@ -21,8 +21,9 @@ from argparse import Namespace
 
 from gan.dataset import Dataset3D
 
-from gan.dynamic_models import Discriminator, Generator, weights_init_normal
-from gan.discriminator import Discriminator as AltDiscriminator
+from gan.dynamic_models import Generator, weights_init_normal
+import gan.discriminator as discriminators
+from gan.generator import make_generator
 from visualization.report import save_sample
 
 
@@ -46,14 +47,16 @@ class Vox2Vox:
 
         self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
 
-        self.generator = Generator(
-            in_channels=opt.channels,
-            out_channels=opt.channels,
-            num_filters=opt.num_filters,
-            depth=opt.generator_depth,
-        )
+        self.generator = make_generator(opt)
 
-        self.discriminator = AltDiscriminator(3, 2, 0, "leaky", "instance", self.tensor_type)
+        if opt.discriminator == "original":
+            self.discriminator = discriminators.Original(opt)
+        elif opt.discriminator == "monopatch":
+            self.discriminator = discriminators.MonoPatch(3, 2, 0, "leaky", "instance", self.tensor_type)
+        elif opt.discriminator == "onlymse":
+            self.discriminator = discriminators.OnlyMSE(opt)
+        elif opt.discriminator == "doublemse":
+            self.discriminator = discriminators.DoubleMSE(opt)
 
         if opt.cuda is True:
             self.generator = self.generator.cuda()
@@ -95,93 +98,6 @@ class Vox2Vox:
             for mode in ("train", "valid", "test")
         }
         self.metrics = {metric: make_metric(metric) for metric in opt.metrics}
-
-
-def setup_gan(opt):
-    logging.info(f"Setting up GAN")
-
-    tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
-
-    generator = Generator(
-        in_channels=opt.channels,
-        out_channels=opt.channels,
-        num_filters=opt.num_filters,
-        depth=opt.generator_depth,
-    )
-
-    discriminator = AltDiscriminator(3, 2, 0, "leaky", "instance", tensor_type)
-
-    if opt.cuda is True:
-        generator = generator.cuda()
-        discriminator = discriminator.cuda()
-
-    g_optimizer = torch.optim.Adam(
-        generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-    )
-    d_optimizer = torch.optim.Adam(
-        discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-    )
-
-    transformations = [
-        # CP: transforms.Resize((opt.img_height, opt.img_width), Image.BICUBIC),
-        # transforms.ToTensor(),
-        # CP: transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        # transforms.Normalize((0.5), (0.5)),  # CP: one value for the mean for each channel (here one channel and two images)
-    ]
-
-    dataloaders = {
-        mode: DataLoader(
-            Dataset3D(
-                dataset_path=opt.dataset_path,
-                sim_name=opt.sim_name,
-                snap_num=opt.snap_num,
-                mass_min=opt.mass_min,
-                mass_max=opt.mass_max,
-                n_gas_min=opt.n_gas_min,
-                data_path=opt.data_path,
-                nvoxel=opt.nvoxel,
-                mode=mode,
-                transforms=transformations,
-            ),
-            batch_size=opt.batch_size,
-            shuffle=True,
-            num_workers=opt.n_cpu,
-            drop_last=True,
-        )
-        for mode in ("train", "valid", "test")
-    }
-
-    # Adversarial ground truths
-    # shape [batch_size, channels, (n_voxel // patch_side) x 3]
-    gt_valid = tensor_type(
-        np.ones((opt.batch_size, opt.channels, *([opt.nvoxel // opt.patch_side] * 3)))
-    )
-    gt_fake = tensor_type(
-        np.zeros((opt.batch_size, opt.channels, *([opt.nvoxel // opt.patch_side] * 3)))
-    )
-
-    if opt.criterion_gan == "mse":
-        criterion_gan = torch.nn.MSELoss()
-    else:
-        criterion_gan = None
-
-    if opt.criterion_pixelwise == "l1":
-        criterion_pixelwise = torch.nn.L1Loss()
-    else:
-        criterion_pixelwise = None
-
-    return Namespace(
-        criterion_gan=criterion_gan,
-        criterion_pixelwise=criterion_pixelwise,
-        d_optimizer=d_optimizer,
-        dataloaders=dataloaders,
-        discriminator=discriminator,
-        g_optimizer=g_optimizer,
-        generator=generator,
-        gt_fake=gt_fake,
-        gt_valid=gt_valid,
-        tensor_type=tensor_type,
-    )
 
 
 def save_checkpoint(epoch, opt, v2v):
@@ -256,7 +172,7 @@ def single_run(opt: Namespace):
             vv.g_optimizer.zero_grad()
 
             pred_gas = vv.generator(real_dm)
-            loss_gen = vv.discriminator.evaluate(real_dm, pred_gas)
+            loss_gen = vv.discriminator.evaluate(real_dm, real_gas, pred_gas)
 
             loss_gen.backward()
             vv.g_optimizer.step()
@@ -268,7 +184,7 @@ def single_run(opt: Namespace):
             vv.d_optimizer.zero_grad()
 
             # pred_gas = p2p3d.generator(real_dm)
-            loss_dis = vv.discriminator.loss(real_dm, real_gas, pred_gas.detach())
+            loss_dis = vv.discriminator.loss(real_dm, real_gas, (pred_gas).detach())
 
             loss_dis.backward()
             vv.d_optimizer.step()
@@ -305,13 +221,14 @@ def single_run(opt: Namespace):
                 + f" ETA: {str(time_left).split('.')[0]}"
             )
 
-        if epoch % opt.sample_interval == 0:
-            save_sample(
-                epoch,
-                opt,
-                real_gas.detach(),
-                pred_gas.detach(),
-            )
+            if epoch % opt.sample_interval == 0 and i == 0:
+                save_sample(
+                    epoch,
+                    opt,
+                    (real_dm).detach(),
+                    (real_gas).detach(),
+                    (pred_gas).detach(),
+                )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             save_checkpoint(epoch, opt, vv)

@@ -16,7 +16,7 @@ def heatmap_plot(*tensors, title: str = None, subplot_titles: Sequence[str] = No
     fig.suptitle = title
 
     for i, t in enumerate(tensors):
-        sb.heatmap(t, ax=axs[i], vmin=0, vmax=0.05, cbar=False, square=True, xticklabels=False, yticklabels=False)
+        sb.heatmap(t, ax=axs[i], cbar=True, square=True, xticklabels=False, yticklabels=False)
         try:
             axs[i].set_title(subplot_titles[i])
         except (TypeError, IndexError):

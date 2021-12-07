@@ -41,15 +41,13 @@ def convolution_same_level(in_channels, out_channels, activation):
     )
 
 
-def discriminator_block(in_channels, out_channels, kernel_size, stride, padding, activation, normalization):
-    layers = [nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride,
-                        padding=padding)]
+def discriminator_block(in_channels, out_channels, activation, normalization=None):
+    layers = [nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=4, stride=2, padding=1)]
     if normalization == "batch":
         layers.append(nn.BatchNorm3d(out_channels))
     elif normalization == "instance":
         layers.append(nn.InstanceNorm3d(out_channels))
-    if activation == "leaky":
-        layers.append(nn.LeakyReLU(0.2, inplace=True))
+    layers.append(activation)
     return nn.Sequential(*layers)
 
 
@@ -105,9 +103,9 @@ def conv_across(in_channels, activation, normalization):
     return nn.Sequential(*layers)
 
 
-class Discriminator(nn.Module):
+class MonoPatch(nn.Module):
     def __init__(self, shrink_exp, patch_exp, extra_depth, activation, normalization, tensor_type):
-        super(Discriminator, self).__init__()
+        super(MonoPatch, self).__init__()
         self.tensor_type = tensor_type
 
         conv_layers = [
@@ -127,7 +125,7 @@ class Discriminator(nn.Module):
     def forward(self, gas, dm):
         return self.model(torch.cat((gas, dm), dim=1))
 
-    def evaluate(self, dm, pred_gas):
+    def evaluate(self, dm, real_gas, pred_gas):
         about_pred = self.model(torch.cat((pred_gas, dm), dim=1))
         return F.mse_loss(about_pred, self.tensor_type(np.ones(about_pred.shape)))
 
@@ -136,3 +134,72 @@ class Discriminator(nn.Module):
         about_pred = self.model(torch.cat((pred_gas, dm), dim=1))
         return (F.mse_loss(about_real, self.tensor_type(np.ones(about_real.shape)))
                 + F.mse_loss(about_pred, self.tensor_type(np.zeros(about_pred.shape))))
+
+class Original(nn.Module):
+    def __init__(self, opt):
+        super(Original, self).__init__()
+        self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
+
+        channels = 1
+        self.lambda_pixel = opt.lambda_pixel
+        self.model = nn.Sequential(
+            discriminator_block(channels * 2, 64, activation=nn.LeakyReLU(0.2, inplace=True)),
+            discriminator_block(64, 128, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            discriminator_block(128, 256, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            discriminator_block(256, 512, activation=nn.LeakyReLU(0.2, inplace=True), normalization="instance"),
+            nn.ConstantPad3d((1, 0, 1, 0, 1, 0), 0),
+            nn.Conv3d(512, 1, kernel_size=4, padding=1, bias=False)
+        )
+
+    def forward(self, gas, dm):
+        # Concatenate image and condition image by channels to produce input
+        return self.model(torch.cat((gas, dm), dim=1))
+
+    def evaluate(self, real_dm, real_gas, pred_gas):
+        about_pred = self.model(torch.cat((pred_gas, real_dm), dim=1))
+        return F.mse_loss(about_pred, self.tensor_type(np.ones(about_pred.shape))) + self.tensor_type([self.lambda_pixel]) * F.l1_loss(pred_gas, real_gas)
+
+    def loss(self, dm, real_gas, pred_gas):
+        about_real = self.model(torch.cat((real_gas, dm), dim=1))
+        about_pred = self.model(torch.cat((pred_gas, dm), dim=1))
+        return (F.mse_loss(about_real, self.tensor_type(np.ones(about_real.shape)))
+                + F.mse_loss(about_pred, self.tensor_type(np.zeros(about_pred.shape))))
+
+class OnlyMSE(nn.Module):
+    def __init__(self, opt):
+        super(OnlyMSE, self).__init__()
+        self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
+
+        # channels = 1
+        # self.lambda_pixel = opt.lambda_pixel
+        self.model = nn.Conv3d(1, 1, 3)
+
+    def forward(self, gas, dm):
+        # Concatenate image and condition image by channels to produce input
+        return None
+
+    def evaluate(self, real_dm, real_gas, pred_gas):
+        return F.mse_loss(real_gas, pred_gas)
+
+    def loss(self, dm, real_gas, pred_gas):
+        return self.tensor_type([0.]).requires_grad_()
+
+class DoubleMSE(nn.Module):
+    def __init__(self, opt):
+        super(DoubleMSE, self).__init__()
+        self.tensor_type = torch.cuda.FloatTensor if opt.cuda else torch.FloatTensor
+
+        # channels = 1
+        # self.lambda_pixel = opt.lambda_pixel
+        self.model = nn.Conv3d(1, 1, 3)
+
+    def forward(self, gas, dm):
+        # Concatenate image and condition image by channels to produce input
+        return None
+
+    def evaluate(self, real_dm, real_gas, pred_gas):
+        return F.mse_loss(real_gas, pred_gas) + F.mse_loss(F.avg_pool3d(real_gas, kernel_size=4), F.avg_pool3d(pred_gas, kernel_size=4))
+
+    def loss(self, dm, real_gas, pred_gas):
+        return self.tensor_type([0.]).requires_grad_()
+
