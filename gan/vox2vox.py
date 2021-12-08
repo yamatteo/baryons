@@ -25,6 +25,7 @@ from gan.dynamic_models import Generator, weights_init_normal
 import gan.discriminator as discriminators
 from gan.generator import make_generator
 from gan.discriminator import make_discriminator
+from preprocess.monolith import preprocess
 from visualization.report import save_sample
 
 
@@ -69,19 +70,15 @@ class Vox2Vox:
             # transforms.Normalize((0.5), (0.5)),  # CP: one value for the mean for each channel (here one channel and two images)
         ]
 
+
+        # Do preprocess if necessary
+        preprocess(opt)
         self.dataloaders = {
             mode: DataLoader(
                 Dataset3D(
-                    dataset_path=opt.dataset_path,
-                    sim_name=opt.sim_name,
-                    snap_num=opt.snap_num,
-                    mass_min=opt.mass_min,
-                    mass_max=opt.mass_max,
-                    n_gas_min=opt.n_gas_min,
-                    data_path=opt.data_path,
-                    nvoxel=opt.nvoxel,
                     mode=mode,
-                    transforms=transformations,
+                    transformations=transformations,
+                    opt=opt,
                 ),
                 batch_size=opt.batch_size,
                 shuffle=True,
@@ -132,7 +129,11 @@ def get_last_checkpoint(opt):
 
 
 def single_run(opt: Namespace):
+    logging.debug(f"Start single_run %{torch.cuda.memory_allocated()}")
     vv = Vox2Vox(opt)
+
+    logging.debug(f"Defined vv %{torch.cuda.memory_allocated()}")
+
     metrics = pd.DataFrame(columns=["epoch", "time", "loss_gen", "loss_dis", *vv.metrics.keys()])
 
     start_from_epoch = get_last_checkpoint(opt)
@@ -144,19 +145,23 @@ def single_run(opt: Namespace):
         vv.generator.apply(weights_init_normal)
         vv.discriminator.apply(weights_init_normal)
 
+    logging.debug(f"Initialize vv %{torch.cuda.memory_allocated()}")
+
+
     init_time = time.time()
 
     for epoch in range(start_from_epoch, opt.n_epochs):
 
-        for i, batch in enumerate(vv.dataloaders[opt.train_mode]):  # batch is a dictionary
+        for i, (real_dm, real_gas) in enumerate(vv.dataloaders[opt.train_mode]):  # batch is a dictionary
 
             logging.debug(f"Starting batch {i}")
+            torch.cuda.reset_peak_memory_stats()
 
             # Model inputs - shape [batch_size, channels, n_voxel, n_voxel, n_voxel]
-            real_dm = batch["DM"].type(vv.tensor_type)
-            real_gas = batch["GAS"].type(vv.tensor_type)
+            real_dm, real_gas = real_dm.type(vv.tensor_type), real_gas.type(vv.tensor_type)
+            # logging.debug(f"Making of real_dm and real_gas %{torch.cuda.memory_allocated()}")
 
-            logging.debug(f"Defined real_dm and real_gas - shape {real_dm.shape}")
+            # logging.debug(f"Defined real_dm and real_gas - shape {real_dm.shape}")
 
             # ------------------
             #  Train Generator
@@ -165,10 +170,19 @@ def single_run(opt: Namespace):
             vv.g_optimizer.zero_grad()
 
             pred_gas = vv.generator(real_dm)
+
+            # logging.debug(f"pred_gas %{torch.cuda.memory_allocated()}")
+
+
             loss_gen = vv.discriminator.evaluate(real_dm, real_gas, pred_gas)
+            # logging.debug(f"loss_gen %{torch.cuda.memory_allocated()}")
 
             loss_gen.backward()
+            # logging.debug(f"loss_gen.backward() %{torch.cuda.memory_allocated()}")
+
             vv.g_optimizer.step()
+            # logging.debug(f"step %{torch.cuda.memory_allocated()}")
+            pred_gas = pred_gas.detach()
 
             # ---------------------
             #  Train Discriminator
@@ -176,11 +190,14 @@ def single_run(opt: Namespace):
 
             vv.d_optimizer.zero_grad()
 
-            # pred_gas = p2p3d.generator(real_dm)
-            loss_dis = vv.discriminator.loss(real_dm, real_gas, (pred_gas).detach())
+            loss_dis = vv.discriminator.loss(real_dm, real_gas, pred_gas)
+            # logging.debug(f"loss_dis = ... %{torch.cuda.memory_allocated()}")
 
             loss_dis.backward()
+            # logging.debug(f"loss_dis.backward() %{torch.cuda.memory_allocated()}")
+
             vv.d_optimizer.step()
+            # logging.debug(f"d_optimizer.step() %{torch.cuda.memory_allocated()}")
 
             # --------------
             #  Log Progress
@@ -201,10 +218,19 @@ def single_run(opt: Namespace):
                         "loss_gen": loss_gen.item(),
                         "loss_dis": loss_dis.item(),
                     },
-                    **{name: metric(real_dm, real_gas, pred_gas.detach()).item() for name, metric in vv.metrics.items()}
+                    **{name: metric(real_dm, real_gas, pred_gas).item() for name, metric in vv.metrics.items()}
                 ),
                 ignore_index=True,
             )
+
+            if epoch % opt.sample_interval == 0 and i == 0:
+                save_sample(
+                    epoch,
+                    opt,
+                    real_dm,
+                    real_gas,
+                    pred_gas,
+                )
 
             logging.info(
                 f" [Epoch {epoch + 1:02d}/{opt.n_epochs:02d}]"
@@ -212,16 +238,8 @@ def single_run(opt: Namespace):
                 + f" [D loss: {loss_dis.item():.3e}]"
                 + f" [G loss: {loss_gen.item():.3e}]"
                 + f" ETA: {str(time_left).split('.')[0]}"
+                + f" MEM {torch.cuda.max_memory_allocated():_d}"
             )
-
-            if epoch % opt.sample_interval == 0 and i == 0:
-                save_sample(
-                    epoch,
-                    opt,
-                    (real_dm).detach(),
-                    (real_gas).detach(),
-                    (pred_gas).detach(),
-                )
 
         if opt.checkpoint_interval != -1 and epoch % opt.checkpoint_interval == 0:
             save_checkpoint(epoch, opt, vv)
