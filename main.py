@@ -52,8 +52,8 @@ def setup_logging(opts: dict):
     console.setLevel(logging.INFO)
     console.setFormatter(logging.Formatter("%(message)s"))
     logging.getLogger().addHandler(console)
-    # logging.getLogger("matplotlib.font_manager").disabled = True
-    # logging.getLogger("parso.python.diff").disabled = True
+    logging.getLogger("matplotlib.font_manager").disabled = True
+    logging.getLogger("parso.python.diff").disabled = True
 
 
 if __name__ == "__main__":
@@ -99,8 +99,10 @@ if __name__ == "__main__":
             torch.cuda.empty_cache()
             extra_opt = dict(zip(multi_labels, possible_opt))
             opt = dict(simple_opts, **extra_opt, run_index=i)
+            logging.debug(f"Before single_run, {torch.cuda.memory_allocated() = }")
             metrics = gan.vox2vox.single_run(Namespace(**opt)).assign(**extra_opt)
             global_metrics = global_metrics.append(metrics, ignore_index=True)
+            logging.debug(f"After single_run, {torch.cuda.memory_allocated() = }")
 
             state = dict(
                 simple_opts=simple_opts,

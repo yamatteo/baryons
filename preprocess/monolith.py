@@ -71,6 +71,7 @@ def find_halo(base_path, halo_id, lbox, mdm, snap_num):
     Returns:
 
     """
+
     sub_dict = il.groupcat.loadSingle(base_path, snap_num, subhaloID=halo_id)
     cm = sub_dict["SubhaloCM"]
 

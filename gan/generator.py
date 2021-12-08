@@ -139,7 +139,6 @@ class DynamicUNet(nn.Module):
 ##############################
 
 
-
 class OriginalUNet(nn.Module):
     def __init__(self, in_dim, out_dim, num_filters):
         super(OriginalUNet, self).__init__()
@@ -245,17 +244,18 @@ class OriginalUNet(nn.Module):
         out = self.out(up_5)  # -> [1, 3, 128, 128, 128]
         return out
 
+
 def make_generator(opt):
     if opt.generator == "flat":
         generator = FlatConvolution(opt)
     elif opt.generator == "original":
         generator = OriginalUNet(in_dim=opt.channels, out_dim=opt.channels, num_filters=opt.num_filters)
     elif opt.generator == "dynamic":
-        generator =  DynamicUNet(opt)
+        generator = DynamicUNet(opt)
 
     if opt.cuda is True:
         generator = generator.cuda()
     optimizer = torch.optim.Adam(
-            generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
-        )
+        generator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
+    )
     return generator, optimizer
