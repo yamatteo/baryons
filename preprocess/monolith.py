@@ -193,10 +193,9 @@ def preprocess(opt):
         )
         np.save(str(data_sim_path / "ids.npy"), ids)
 
-    ready_dm = list((data_sim_path / f"nvoxel_{opt.nvoxel}").glob("*/halo_*_dm_coalesced.npy"))
-    ready_gas = list((data_sim_path / f"nvoxel_{opt.nvoxel}").glob("*/halo_*_gas_coalesced.npy"))
+    ready_halos = list((data_sim_path / f"nvoxel_{opt.nvoxel}").glob("*/halo_*_coalesced.npy"))
 
-    if len(ids) == len(ready_dm) == len(ready_gas) > 0:
+    if len(ids) == len(ready_halos) > 0:
         logging.info("Preprocessing is already complete.")
     else:
         logging.info(f"Preprocessing begins ({len(ids)} halos to process)...")
@@ -218,18 +217,26 @@ def preprocess(opt):
                 2: "test",
             }[i % 3]
 
+            # torch.save(
+            #     dm_coalesced,
+            #     data_sim_path
+            #     / f"nvoxel_{opt.nvoxel}"
+            #     / mode
+            #     / f"halo_{halo_id}_dm_coalesced.npy",
+            # )
+            # torch.save(
+            #     gas_coalesced,
+            #     data_sim_path
+            #     / f"nvoxel_{opt.nvoxel}"
+            #     / mode
+            #     / f"halo_{halo_id}_gas_coalesced.npy",
+            # )
             torch.save(
-                dm_coalesced,
+                {"dm": dm_coalesced, "gas": gas_coalesced},
                 data_sim_path
                 / f"nvoxel_{opt.nvoxel}"
                 / mode
-                / f"halo_{halo_id}_dm_coalesced.npy",
-            )
-            torch.save(
-                gas_coalesced,
-                data_sim_path
-                / f"nvoxel_{opt.nvoxel}"
-                / mode
-                / f"halo_{halo_id}_gas_coalesced.npy",
+                / f"halo_{halo_id}_coalesced.npy",
+
             )
     return ids
