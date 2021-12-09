@@ -71,6 +71,19 @@ class UnetGenerator(nn.Module):
         """Standard forward"""
         return self.model(input)
 
+    def init_weights(self):
+        def _init_weights_(m):
+            if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d)):
+                nn.init.normal_(m.weight.data, 0.0, 0.02)
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.normal_(m.weight.data, 1.0, 0.02)
+                nn.init.constant_(m.bias.data, 0.0)
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Tanh, nn.Sequential, UnetSkipConnectionBlock, UnetGenerator)):
+                pass
+            else:
+                raise NotImplementedError(f"How to initialize {type(m)}?")
+        self.apply(_init_weights_)
+
 
 class UnetSkipConnectionBlock(nn.Module):
     """Defines the Unet submodule with skip connection.
