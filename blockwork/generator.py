@@ -17,7 +17,7 @@ class UnetGenerator(nn.Module):
         input_nc,
         output_nc,
         num_downs,
-        ngf=64,
+        ngf=16,
         norm_layer=nn.BatchNorm3d,
         use_dropout=False,
     ):
@@ -35,26 +35,23 @@ class UnetGenerator(nn.Module):
         super(UnetGenerator, self).__init__()
         # construct unet structure
         unet_block = UnetSkipConnectionBlock(
-            ngf * 8,
-            ngf * 8,
+            ngf * 4,
+            ngf * 4,
             input_nc=None,
             submodule=None,
             norm_layer=norm_layer,
             innermost=True,
         )  # add the innermost layer
-        for i in range(num_downs - 5):  # add intermediate layers with ngf * 8 filters
+        for i in range(num_downs - 4):  # add intermediate layers with ngf * 4 filters
             unet_block = UnetSkipConnectionBlock(
-                ngf * 8,
-                ngf * 8,
+                ngf * 4,
+                ngf * 4,
                 input_nc=None,
                 submodule=unet_block,
                 norm_layer=norm_layer,
                 use_dropout=use_dropout,
             )
-        # gradually reduce the number of filters from ngf * 8 to ngf
-        unet_block = UnetSkipConnectionBlock(
-            ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer
-        )
+        # gradually reduce the number of filters from ngf * 4 to ngf
         unet_block = UnetSkipConnectionBlock(
             ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer
         )
@@ -156,7 +153,6 @@ class UnetSkipConnectionBlock(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, x):
-        print(f"forward {x.shape = }")
         if self.outermost:
             return self.model(x)
         else:  # add skip connections
