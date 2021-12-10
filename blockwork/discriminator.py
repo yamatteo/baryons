@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import functools
 
@@ -7,7 +8,7 @@ class NLayerDiscriminator(nn.Module):
     From https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix.git
     """
 
-    def __init__(self, input_nc, ndf=32, n_layers=3, norm_layer=nn.BatchNorm3d):
+    def __init__(self, input_nc, ndf=4, n_layers=3, norm_layer=nn.BatchNorm3d):
         """Construct a PatchGAN discriminator
         Parameters:
             input_nc (int)  -- the number of channels in input images
@@ -20,6 +21,7 @@ class NLayerDiscriminator(nn.Module):
             use_bias = norm_layer.func == nn.InstanceNorm3d
         else:
             use_bias = norm_layer == nn.InstanceNorm3d
+
 
         kernel_size = (4, 4, 4)
         stride1 = (1, 1, 1)
@@ -64,3 +66,51 @@ class NLayerDiscriminator(nn.Module):
             else:
                 raise NotImplementedError(f"How to initialize {type(m)}?")
         self.apply(_init_weights_)
+
+
+class VoxNet(nn.Module):
+    """From https://github.com/MonteYang/VoxNet.pytorch.git"""
+    def __init__(self, n_classes=2, input_side=32):
+        super(VoxNet, self).__init__()
+        self.n_classes = n_classes
+        self.input_shape = (input_side, input_side, input_side)
+        self.feat = nn.Sequential(
+            nn.Conv3d(in_channels=2, out_channels=32, kernel_size=5, stride=2),
+            nn.ReLU(),
+            nn.Dropout(p=0.2),
+            nn.Conv3d(in_channels=32, out_channels=32, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool3d(2),
+            nn.Dropout(p=0.3),
+        )
+        x = self.feat(torch.autograd.Variable(torch.rand((1, 2) + self.input_shape)))
+        dim_feat = 1
+        for n in x.size()[1:]:
+            dim_feat *= n
+
+        self.mlp = nn.Sequential(
+            nn.Linear(dim_feat, 128),
+            nn.ReLU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(128, self.n_classes),
+        )
+
+    def init_weights(self):
+        def _init_weights_(m):
+            if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d)):
+                nn.init.normal_(m.weight.data, 0.0, 0.02)
+            elif isinstance(m, (nn.BatchNorm3d, nn.Linear)):
+                nn.init.normal_(m.weight.data, 1.0, 0.02)
+                nn.init.constant_(m.bias.data, 0.0)
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Sequential, nn.MaxPool3d, nn.Dropout, VoxNet)):
+                pass
+            else:
+                raise NotImplementedError(f"How to initialize {type(m)}?")
+        self.apply(_init_weights_)
+
+
+    def forward(self, x):
+        x = self.feat(x)
+        x = x.view(x.size(0), -1)
+        x = self.mlp(x)
+        return x

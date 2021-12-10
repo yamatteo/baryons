@@ -10,7 +10,7 @@ import torch.nn.functional as functional
 from .dataset import BlockworkDataset
 from .generator import UnetGenerator
 from .shallow_generator import ShallowGenerator
-from .discriminator import NLayerDiscriminator
+from .discriminator import NLayerDiscriminator, VoxNet
 from .logger import set_logger
 from preprocess.monolith import preprocess
 from torch.utils.tensorboard import SummaryWriter
@@ -28,7 +28,7 @@ class BlockworkVox2Vox:
         self.gen_opt = torch.optim.Adam(
             self.gen.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
         )
-        self.dis = NLayerDiscriminator(input_nc=2).cuda()
+        self.dis = VoxNet().cuda()
         self.dis_opt = torch.optim.Adam(
             self.gen.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
         )
@@ -139,16 +139,20 @@ class BlockworkVox2Vox:
         self.gen_opt.zero_grad()
         pg = self.gen(dm)
         dpg = self.dis(torch.cat([dm, pg], dim=1))
-        gen_loss = functional.mse_loss(dpg, torch.ones_like(dpg)) + functional.mse_loss(rg, pg.detach())
+        # print(f"{dpg.shape=}")
+        # print(f"{self.tensor_type([1., 0.]).view((1, 2)).repeat(64, 1).shape=}")
+        gen_loss = functional.mse_loss(dpg, self.tensor_type([1., 0.]).view((1, 2)).repeat(64, 1))
+        # gen_loss = functional.mse_loss(dpg, self.tensor_type([1., 0.]))
         gen_loss.backward()
         self.gen_opt.step()
 
         self.dis_opt.zero_grad()
         drg = self.dis(torch.cat([dm, rg], dim=1))
         dpg = dpg.detach()
-        dis_loss = functional.mse_loss(
-            dpg, torch.zeros_like(dpg)
-        ) + functional.mse_loss(drg, torch.ones_like(drg))
+        dis_loss = (
+                functional.mse_loss(dpg, self.tensor_type([0., 1.]).view((1, 2)).repeat(64, 1))
+                + functional.mse_loss(drg, self.tensor_type([1., 0.]).view((1, 2)).repeat(64, 1))
+        )
         dis_loss.backward()
         self.dis_opt.step()
 

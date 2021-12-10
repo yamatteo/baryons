@@ -2,9 +2,11 @@ import logging
 import os
 import datetime
 import pprint
+from functools import reduce
 
 from options import opts
 from .bwnet import BlockworkVox2Vox
+from .discriminator import VoxNet
 from .logger import set_logger
 from argparse import Namespace
 
