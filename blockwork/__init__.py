@@ -10,20 +10,8 @@ import torch.nn.functional as functional
 from .dataset import BlockworkDataset
 from .generator import UnetGenerator
 from .discriminator import NLayerDiscriminator
+from .logger import set_logger
 from preprocess.monolith import preprocess
-
-logging.basicConfig(
-    filename="last_run.log",
-    filemode="a",
-    format="%(levelname)s: %(message)s",
-    level=logging.INFO,
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-console.setFormatter(logging.Formatter("%(message)s"))
-logging.getLogger().addHandler(console)
-logging.getLogger("matplotlib.font_manager").disabled = True
-logging.getLogger("parso.python.diff").disabled = True
 
 class BlockworkVox2Vox:
     def __init__(self, opt):
@@ -124,7 +112,7 @@ class BlockworkVox2Vox:
         time_left = datetime.timedelta(
             seconds=batches_left * (time.time() - self.init_time) / batches_done
         )
-        logging.info(
+        logging.getLogger("blockwork").info(
             f" [Epoch {epoch + 1:03d}/{n_epochs:03d}]"
             + f" [Batch {i + 1:03d}/{len(self.dataloader):03d}]"
             + f" [D loss: {dis_loss:.3e}]"
@@ -167,7 +155,8 @@ class BlockworkVox2Vox:
             self.run_path / f"sample_{epoch:03d}.npy",
         )
 
-    def train(self, n_epochs, sample_interval, checkpoint_interval, logger=None):
+    def train(self, n_epochs, sample_interval, checkpoint_interval):
+        set_logger(self.run_path)
         self.running_metrics = pd.DataFrame(
             columns=[
                 "epoch",
@@ -187,7 +176,7 @@ class BlockworkVox2Vox:
                 torch.cuda.reset_peak_memory_stats()
                 dm, rg, pg, drg, dpg, gen_los, dis_loss = self.train_step(dm, rg)
                 self.calculate_metrics(epoch=epoch, dm=dm, rg=rg, pg=pg, gen_loss=gen_los, dis_loss=dis_loss)
-                # self.log_training_step(epoch=epoch, i=i, n_epochs=n_epochs, gen_loss=gen_los, dis_loss=dis_loss)
+                self.log_training_step(epoch=epoch, i=i, n_epochs=n_epochs, gen_loss=gen_los, dis_loss=dis_loss)
 
                 if epoch % sample_interval == 0 and i == 0:
                     print(f"{drg = }")
