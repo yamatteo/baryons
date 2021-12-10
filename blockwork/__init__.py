@@ -13,6 +13,9 @@ from .shallow_generator import ShallowGenerator
 from .discriminator import NLayerDiscriminator
 from .logger import set_logger
 from preprocess.monolith import preprocess
+from torch.utils.tensorboard import SummaryWriter
+
+
 
 class BlockworkVox2Vox:
     def __init__(self, opt):
@@ -30,17 +33,22 @@ class BlockworkVox2Vox:
         self.dis_opt = torch.optim.Adam(
             self.gen.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2)
         )
-        self.dataloader = BlockworkDataset(
-            path=(
-                    Path(opt.data_path)
-                    / f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}"
-                    / f"nvoxel_{opt.nvoxel}"
-                    / "train"
+        self.dataloader = torch.utils.data.DataLoader(
+            BlockworkDataset(
+                path=(
+                        Path(opt.data_path)
+                        / f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}"
+                        / f"nvoxel_{opt.nvoxel}"
+                        / "train"
+                ),
+                block_side=16,
+                world_side=64,
+                margin=8,
             ),
-            block_side=16,
-            world_side=64,
-            margin=8,
-            batch_size=4,
+            batch_size=opt.batch_size,
+            shuffle=True,
+            num_workers=opt.n_cpu,
+            drop_last=True,
         )
         self.metrics_functions = {
             "mse": (lambda dm, rg, pg: functional.mse_loss(pg, rg)),
@@ -55,6 +63,7 @@ class BlockworkVox2Vox:
                 *self.metrics_functions.keys(),
             ]
         )
+        self.writer = SummaryWriter()
 
     def save_checkpoint(self, epoch):
         torch.save(
@@ -114,13 +123,14 @@ class BlockworkVox2Vox:
         time_left = datetime.timedelta(
             seconds=batches_left * (time.time() - self.init_time) / batches_done
         )
+        self.writer.add_scalar("dis_loss", dis_loss, global_step=epoch*n_epochs+i)
         logging.getLogger("blockwork").info(
             f" [Epoch {epoch + 1:03d}/{n_epochs:03d}]"
             + f" [Batch {i + 1:03d}/{len(self.dataloader):03d}]"
             + f" [D loss: {dis_loss:.3e}]"
             + f" [G loss: {gen_loss:.3e}]"
             + f" ETA: {str(time_left).split('.')[0]}"
-            + f" MEM {torch.cuda.max_memory_allocated() // (1024*1024):05d} MB"
+            + f" MEM {torch.cuda.max_memory_allocated() // (1024 * 1024):05d} MB"
         )
 
     def train_step(self, dm, rg):
@@ -166,13 +176,13 @@ class BlockworkVox2Vox:
             pg = self.gen(dm)
             loss = torch.Tensor([0.0]).cuda()
             for dim in (2, 3, 4):
-                sum_rg = torch.mean(rg, dim=[d for d in (1, 2, 3, 4) if d!=dim])
-                sum_pg = torch.mean(pg, dim=[d for d in (1, 2, 3, 4) if d!=dim])
+                sum_rg = torch.mean(rg, dim=[d for d in (1, 2, 3, 4) if d != dim])
+                sum_pg = torch.mean(pg, dim=[d for d in (1, 2, 3, 4) if d != dim])
                 loss += functional.l1_loss(sum_rg, sum_pg)
             loss.backward()
             with torch.no_grad():
                 for p in self.gen.parameters():
-                    p -= 0.001 * (0.9 ** (i/4)) * p.grad
+                    p -= 0.001 * (0.9 ** (i / 4)) * p.grad
         logging.getLogger("blockwork").info(
             ""
             + f"{sum_rg=}\n"
@@ -181,7 +191,6 @@ class BlockworkVox2Vox:
             # + f"Parameters = {[ p for p in self.gen.parameters() ]}\n"
             # + f"Gradients = {[ p.grad for p in self.gen.parameters() ]}\n"
         )
-
 
     def train(self, n_epochs, sample_interval, checkpoint_interval):
         self.running_metrics = pd.DataFrame(

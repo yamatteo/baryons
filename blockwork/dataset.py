@@ -38,14 +38,10 @@ def crop(inputs, block_side, world_side, margin):
 
 
 class BlockworkDataset(torch.utils.data.Dataset):
-    """
-    Use with batch_size = None
-    """
-    def __init__(self, path, block_side, world_side, margin, batch_size):
+    def __init__(self, path, block_side, world_side, margin):
         self.block_side = block_side
         self.world_side = world_side
         self.margin = margin
-        self.batch_size = batch_size
         if isinstance(path, str):
             path = Path(path)
         self.files = list(path.glob("halo_*_coalesced.npy"))
@@ -53,19 +49,13 @@ class BlockworkDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         """
         Returns:
-            (
-                Tensor: (BATCH_SIZE, 1, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN),  --> dark matter
-                Tensor: (BATCH_SIZE, 1, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN),  --> gas
+            tuple(
+                Tensor: (1, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN),  --> dark matter
+                Tensor: (1, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN, BLOCK_SIDE+2*MARGIN),  --> gas
             )
         """
         halos = extend(unpack(torch.load(self.files[index])), self.margin)
-        dms = list()
-        gss = list()
-        for batch in range(self.batch_size):
-            dm, gs = crop(halos, self.block_side, self.world_side, self.margin)
-            dms.append(dm)
-            gss.append(gs)
-        return torch.stack(dms), torch.stack(gss)
+        return crop(halos, self.block_side, self.world_side, self.margin)
 
     def __len__(self):
         return len(self.files)
