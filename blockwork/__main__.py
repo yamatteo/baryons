@@ -4,12 +4,11 @@ import datetime
 import pprint
 
 from options import opts
-from . import BlockworkVox2Vox
+from .bwnet import BlockworkVox2Vox
 from .logger import set_logger
 from argparse import Namespace
 
 opts["run_path"] = "runs"
-opts["lr"] = 0.005
 bvv = BlockworkVox2Vox(Namespace(**opts))
 
 os.makedirs(bvv.run_path, exist_ok=True)
@@ -29,5 +28,5 @@ with open(bvv.run_path / "last_run.log", mode="w") as f:
         ]
     )
 
-bvv.train(1, 1, -1)
+bvv.train(opts["n_epochs"], opts["sample_interval"], opts["checkpoint_interval"])
 bvv.writer.close()

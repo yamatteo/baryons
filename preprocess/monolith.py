@@ -217,20 +217,6 @@ def preprocess(opt):
                 2: "test",
             }[i % 3]
 
-            # torch.save(
-            #     dm_coalesced,
-            #     data_sim_path
-            #     / f"nvoxel_{opt.nvoxel}"
-            #     / mode
-            #     / f"halo_{halo_id}_dm_coalesced.npy",
-            # )
-            # torch.save(
-            #     gas_coalesced,
-            #     data_sim_path
-            #     / f"nvoxel_{opt.nvoxel}"
-            #     / mode
-            #     / f"halo_{halo_id}_gas_coalesced.npy",
-            # )
             torch.save(
                 {"dm": dm_coalesced, "gas": gas_coalesced},
                 data_sim_path
