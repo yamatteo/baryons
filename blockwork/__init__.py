@@ -9,6 +9,7 @@ import torch.nn.functional as functional
 
 from .dataset import BlockworkDataset
 from .generator import UnetGenerator
+from .shallow_generator import ShallowGenerator
 from .discriminator import NLayerDiscriminator
 from .logger import set_logger
 from preprocess.monolith import preprocess
@@ -87,6 +88,7 @@ class BlockworkVox2Vox:
         except ValueError:
             self.gen.init_weights()
             self.dis.init_weights()
+            self.pre_train()
             return 0
 
     def calculate_metrics(self, epoch, dm, rg, pg, gen_loss, dis_loss):
@@ -137,9 +139,12 @@ class BlockworkVox2Vox:
         dis_loss = functional.mse_loss(
             dpg, torch.zeros_like(dpg)
         ) + functional.mse_loss(drg, torch.ones_like(drg))
-        print(gen_loss)
         dis_loss.backward()
         self.dis_opt.step()
+
+        # logging.getLogger("blockwork").info(
+        #     f"{torch.sum(rg)=} {torch.sum(pg)=}"
+        # )
 
         return dm, rg, pg, drg, dpg, gen_loss, dis_loss
 
@@ -155,8 +160,30 @@ class BlockworkVox2Vox:
             self.run_path / f"sample_{epoch:03d}.npy",
         )
 
+    def pre_train(self):
+        for i, (dm, rg) in enumerate(self.dataloader):
+            dm, rg = dm.type(self.tensor_type), rg.type(self.tensor_type)
+            pg = self.gen(dm)
+            loss = torch.Tensor([0.0]).cuda()
+            for dim in (2, 3, 4):
+                sum_rg = torch.mean(rg, dim=[d for d in (1, 2, 3, 4) if d!=dim])
+                sum_pg = torch.mean(pg, dim=[d for d in (1, 2, 3, 4) if d!=dim])
+                loss += functional.l1_loss(sum_rg, sum_pg)
+            loss.backward()
+            with torch.no_grad():
+                for p in self.gen.parameters():
+                    p -= 0.001 * (0.9 ** (i/4)) * p.grad
+        logging.getLogger("blockwork").info(
+            ""
+            + f"{sum_rg=}\n"
+            + f"{sum_pg=}\n"
+            + f"{loss.item()=}"
+            # + f"Parameters = {[ p for p in self.gen.parameters() ]}\n"
+            # + f"Gradients = {[ p.grad for p in self.gen.parameters() ]}\n"
+        )
+
+
     def train(self, n_epochs, sample_interval, checkpoint_interval):
-        set_logger(self.run_path)
         self.running_metrics = pd.DataFrame(
             columns=[
                 "epoch",
@@ -179,7 +206,6 @@ class BlockworkVox2Vox:
                 self.log_training_step(epoch=epoch, i=i, n_epochs=n_epochs, gen_loss=gen_los, dis_loss=dis_loss)
 
                 if epoch % sample_interval == 0 and i == 0:
-                    print(f"{drg = }")
                     self.save_sample(
                         dm=dm,
                         rg=rg,

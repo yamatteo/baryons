@@ -5,6 +5,7 @@ import pprint
 
 from options import opts
 from . import BlockworkVox2Vox
+from .logger import set_logger
 from argparse import Namespace
 
 opts["run_path"] = "test"
@@ -12,6 +13,8 @@ opts["lr"] = 0.005
 bvv = BlockworkVox2Vox(Namespace(**opts))
 
 os.makedirs(bvv.run_path, exist_ok=True)
+set_logger(bvv.run_path)
+
 with open(bvv.run_path / "last_run.log", mode="w") as f:
     f.writelines(
         [
@@ -26,17 +29,4 @@ with open(bvv.run_path / "last_run.log", mode="w") as f:
         ]
     )
 
-logging.basicConfig(
-    filename="last_run.log",
-    filemode="a",
-    format="%(levelname)s: %(message)s",
-    level=logging.DEBUG if opts["log_level"] == "debug" else logging.INFO,
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-console.setFormatter(logging.Formatter("%(message)s"))
-logging.getLogger().addHandler(console)
-logging.getLogger("matplotlib.font_manager").disabled = True
-logging.getLogger("parso.python.diff").disabled = True
-
-bvv.train(20, 1, -1)
+bvv.train(5, 1, -1)
