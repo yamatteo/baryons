@@ -1,24 +1,30 @@
+from pathlib import Path
+
 import torch
 
-def mock_element():
-    return (
-            torch.randn((1, 16, 16)),
-            torch.rand((1, 16, 16)),
-        )
 
-def mock_batch(size=8):
+def unpack(halo_dict):
     return (
-        torch.stack([mock_element()[0] for i in range(size)], dim=0),
-        torch.stack([mock_element()[1] for i in range(size)], dim=0)
+        halo_dict["dm"].to_dense().unsqueeze(0),
+        halo_dict["gas"].to_dense().unsqueeze(0),
     )
 
 
-class DatasetMock(torch.utils.data.Dataset):
-    def __init__(self):
-        pass
+class BlockworkDataset(torch.utils.data.Dataset):
+    def __init__(self, path):
+        if isinstance(path, str):
+            path = Path(path)
+        self.files = list(path.glob("halo_*_coalesced.npy"))
 
     def __getitem__(self, index):
-        return mock_element()
+        """
+        Returns:
+            tuple(
+                Tensor: (1, NVOXEL, NVOXEL, NVOXEL),  --> dark matter
+                Tensor: (1, NVOXEL, NVOXEL, NVOXEL),  --> gas
+            )
+        """
+        return unpack(torch.load(self.files[index]))
 
     def __len__(self):
-        return 1024
+        return len(self.files)

@@ -76,9 +76,9 @@ class UnetGenerator(nn.Module):
             if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d)):
                 nn.init.normal_(m.weight.data, 0.0, 0.02)
             elif isinstance(m, nn.BatchNorm3d):
-                nn.init.normal_(m.weight.data, 1.0, 0.02)
+                nn.init.normal_(m.weight.data, 0.1, 0.02)
                 nn.init.constant_(m.bias.data, 0.0)
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Tanh, nn.Sequential, UnetSkipConnectionBlock, UnetGenerator)):
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Tanh, nn.Dropout, nn.Sequential, UnetSkipConnectionBlock, UnetGenerator)):
                 pass
             else:
                 raise NotImplementedError(f"How to initialize {type(m)}?")
@@ -166,7 +166,12 @@ class UnetSkipConnectionBlock(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, x):
+        # print(f"input {x.shape=}")
         if self.outermost:
-            return self.model(x)
+            output = self.model(x)
+            # print(f"{output.shape=}")
+            return output
         else:  # add skip connections
-            return torch.cat([x, self.model(x)], 1)
+            output = torch.cat([x, self.model(x)], 1)
+            # print(f"{output.shape=}")
+            return output

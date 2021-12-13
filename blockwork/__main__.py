@@ -4,13 +4,12 @@ import datetime
 import pprint
 from functools import reduce
 
-from options import opts
-from .bwnet import BlockworkVox2Vox
-from .discriminator import VoxNet
+from .options import opts
+from .net import BlockworkVox2Vox
+# from .discriminator import VoxNet
 from .logger import set_logger
 from argparse import Namespace
 
-opts["run_path"] = "runs"
 bvv = BlockworkVox2Vox(Namespace(**opts))
 
 os.makedirs(bvv.run_path, exist_ok=True)
