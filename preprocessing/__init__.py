@@ -10,6 +10,13 @@ import torch
 import illustris_python as il
 import my_utils_illustris as myil
 
+logger = logging.getLogger("baryons")
+
+console = logging.StreamHandler()
+console.setLevel(logging.DEBUG)
+console.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(console)
+logger.setLevel(logging.DEBUG)
 
 def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min):
     """TODO docstring
@@ -25,7 +32,7 @@ def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min):
     Returns:
 
     """
-    logging.info(f"Finding ids...")
+    logger.info(f"Finding ids...")
 
     # Get IDs of central subhalos from halo catalogue
     groups = il.groupcat.loadHalos(base_path, snap_num, fields=["GroupFirstSub"])
@@ -48,7 +55,7 @@ def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min):
     subgroups["index"] = np.arange(0, subgroups["count"])  # Keep track of index
 
     filt_mass = (subgroups["SubhaloMass"] >= mass_min * hsmall / 1e10) & (
-        subgroups["SubhaloMass"] < mass_max * hsmall / 1e10
+            subgroups["SubhaloMass"] < mass_max * hsmall / 1e10
     )
 
     filt_gas = subgroups["SubhaloLenType"][:, 0] > n_gas_min
@@ -142,74 +149,88 @@ def voxelize(dm_halo, gas_halo, nvoxel):
     return dm_coalesced, gas_coalesced
 
 
-def preprocess(opt):
+def update_stats(stats, dm_coalesced, rg_coalesced):
+    stats["dm_min"] = min(stats["dm_min"], torch.min(dm_coalesced.values()).item())
+    stats["dm_max"] = max(stats["dm_max"], torch.max(dm_coalesced.values()).item())
+    stats["rg_min"] = min(stats["rg_min"], torch.min(rg_coalesced.values()).item())
+    stats["rg_max"] = max(stats["rg_max"], torch.max(rg_coalesced.values()).item())
+    return stats
+
+
+def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max, nvoxel, n_gas_min):
     """TODO docstring
 
     Args:
+        source_path: .../output
+        target_path: .../sim_name_mass_range
         opt:
 
     Returns:
 
     """
-    data_sim_path = (
-        Path(opt.data_path)
-        / f"{opt.sim_name}_SNAP{opt.snap_num:03d}_MASS{opt.mass_min:.2e}_{opt.mass_max:.2e}_NGASMIN{opt.n_gas_min}"
-    )
-    dataset_sim_path = Path(opt.dataset_path) / opt.sim_name
     for mode in ("train", "valid", "test"):
-        (data_sim_path / f"nvoxel_{opt.nvoxel}" / mode).mkdir(
+        (target_path / f"nvoxel_{nvoxel}" / mode).mkdir(
             parents=True, exist_ok=True
         )
 
-    if not (dataset_sim_path / "output" / f"groups_{opt.snap_num:03d}").exists():
+    if not (source_path / f"groups_{snap_num:03d}").exists():
         raise IOError(
-            f"Snapshot {opt.snap_num} of simulation {opt.sim_name} doesn't seem to be in {dataset_sim_path / 'output'}."
+            f"Snapshot {snap_num} of simulation {sim_name} doesn't seem to be in {source_path}."
         )
 
-    hsmall = il.groupcat.loadHeader(str(dataset_sim_path / "output"), opt.snap_num)[
+    hsmall = il.groupcat.loadHeader(str(source_path), snap_num)[
         "HubbleParam"
     ]
-    lbox = il.groupcat.loadHeader(str(dataset_sim_path / "output"), opt.snap_num)[
+    lbox = il.groupcat.loadHeader(str(source_path), snap_num)[
         "BoxSize"
     ]  # kpc/h
     mdm = {
         "TNG300-1": 4e7 / hsmall,
         "TNG100-1": 5.1e6 / hsmall,
         "TNG100-3": 3.2e8 / hsmall,
-    }[opt.sim_name]
+    }[sim_name]
 
     try:
-        logging.info("Loading ids...")
-        ids = np.load(str(data_sim_path / "ids.npy"))
+        logger.info("Loading ids...")
+        ids = np.load(str(target_path / "ids.npy"))
     except FileNotFoundError:
-        logging.info(" -!- Did not found ids.npy")
+        logger.info(" -!- Did not found ids.npy")
         ids = find_ids(
-            base_path=str(dataset_sim_path / "output"),
+            base_path=str(source_path),
             hsmall=hsmall,
-            snap_num=opt.snap_num,
-            mass_min=opt.mass_min,
-            mass_max=opt.mass_max,
-            n_gas_min=opt.n_gas_min,
+            snap_num=snap_num,
+            mass_min=mass_min,
+            mass_max=mass_max,
+            n_gas_min=n_gas_min,
         )
-        np.save(str(data_sim_path / "ids.npy"), ids)
+        np.save(str(target_path / "ids.npy"), ids)
 
-    ready_halos = list((data_sim_path / f"nvoxel_{opt.nvoxel}").glob("*/halo_*_coalesced.npy"))
+    ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
 
     if len(ids) == len(ready_halos) > 0:
-        logging.info("Preprocessing is already complete.")
+        logger.info("Preprocessing is already complete.")
+        stats = np.load(str(target_path / "stats.npy"), allow_pickle=True)
     else:
-        logging.info(f"Preprocessing begins ({len(ids)} halos to process)...")
+        logger.info(f"Preprocessing begins ({len(ids)} halos to process)...")
+        stats = dict(
+            dm_min=np.NaN,
+            dm_max=np.NaN,
+            rg_min=np.NaN,
+            rg_max=np.NaN,
+        )
 
         for i, halo_id in enumerate(ids):
             dm_halo, gas_halo = find_halo(
-                base_path=str(dataset_sim_path / "output"),
+                base_path=str(source_path),
                 halo_id=halo_id,
                 lbox=lbox,
                 mdm=mdm,
-                snap_num=opt.snap_num,
+                snap_num=snap_num,
             )
 
-            dm_coalesced, gas_coalesced = voxelize(dm_halo, gas_halo, nvoxel=opt.nvoxel)
+            dm_coalesced, rg_coalesced = voxelize(dm_halo, gas_halo, nvoxel=nvoxel)
+
+            stats = update_stats(stats, dm_coalesced, rg_coalesced)
 
             mode = {
                 0: "train",
@@ -218,11 +239,12 @@ def preprocess(opt):
             }[i % 3]
 
             torch.save(
-                {"dm": dm_coalesced, "gas": gas_coalesced},
-                data_sim_path
-                / f"nvoxel_{opt.nvoxel}"
+                {"dm": dm_coalesced, "rg": rg_coalesced},
+                target_path
+                / f"nvoxel_{nvoxel}"
                 / mode
                 / f"halo_{halo_id}_coalesced.npy",
 
             )
-    return ids
+        np.save(str(target_path / "stats.npy"), stats, allow_pickle=True)
+    return ids, stats
