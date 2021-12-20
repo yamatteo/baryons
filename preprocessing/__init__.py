@@ -4,6 +4,7 @@ import os.path
 import pandas as pd
 import time
 from pathlib import Path
+import pickle
 
 import torch
 
@@ -12,27 +13,8 @@ import my_utils_illustris as myil
 
 logger = logging.getLogger("baryons")
 
-console = logging.StreamHandler()
-console.setLevel(logging.DEBUG)
-console.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(console)
-logger.setLevel(logging.DEBUG)
-
-def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min):
-    """TODO docstring
-
-    Args:
-        base_path: DATABASE/SIMNAME/output
-        hsmall:
-        snap_num:
-        mass_min:
-        mass_max:
-        n_gas_min:
-
-    Returns:
-
-    """
-    logger.info(f"Finding ids...")
+def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min, fixed_size=None):
+    logger.info(f"Finding halos in {base_path} -- snap {snap_num}...")
 
     # Get IDs of central subhalos from halo catalogue
     groups = il.groupcat.loadHalos(base_path, snap_num, fields=["GroupFirstSub"])
@@ -62,23 +44,13 @@ def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min):
 
     ids_within_mass = subgroups["index"][filt_mass & filt_gas]
 
-    return np.intersect1d(ids_central, ids_within_mass)
+    if fixed_size is None:
+        return np.intersect1d(ids_central, ids_within_mass)
+    else:
+        return np.intersect1d(ids_central, ids_within_mass)[:3*fixed_size]
 
 
 def find_halo(base_path, halo_id, lbox, mdm, snap_num):
-    """TODO docstring
-
-    Args:
-        base_path:
-        halo_id:
-        lbox:
-        mdm:
-        snap_num:
-
-    Returns:
-
-    """
-
     sub_dict = il.groupcat.loadSingle(base_path, snap_num, subhaloID=halo_id)
     cm = sub_dict["SubhaloCM"]
 
@@ -115,16 +87,6 @@ def find_halo(base_path, halo_id, lbox, mdm, snap_num):
 
 
 def voxelize(dm_halo, gas_halo, nvoxel):
-    """TODO docstring
-
-    Args:
-        dm_halo:
-        gas_halo:
-        nvoxel:
-
-    Returns:
-
-    """
     # Split input
     dm_pos, dm_mass = dm_halo[:, 0:3], dm_halo[:, 3]
     gas_pos, gas_mass = gas_halo[:, 0:3], gas_halo[:, 3]
@@ -149,25 +111,7 @@ def voxelize(dm_halo, gas_halo, nvoxel):
     return dm_coalesced, gas_coalesced
 
 
-def update_stats(stats, dm_coalesced, rg_coalesced):
-    stats["dm_min"] = min(stats["dm_min"], torch.min(dm_coalesced.values()).item())
-    stats["dm_max"] = max(stats["dm_max"], torch.max(dm_coalesced.values()).item())
-    stats["rg_min"] = min(stats["rg_min"], torch.min(rg_coalesced.values()).item())
-    stats["rg_max"] = max(stats["rg_max"], torch.max(rg_coalesced.values()).item())
-    return stats
-
-
-def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max, nvoxel, n_gas_min):
-    """TODO docstring
-
-    Args:
-        source_path: .../output
-        target_path: .../sim_name_mass_range
-        opt:
-
-    Returns:
-
-    """
+def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max, nvoxel, n_gas_min, fixed_size=None):
     for mode in ("train", "valid", "test"):
         (target_path / f"nvoxel_{nvoxel}" / mode).mkdir(
             parents=True, exist_ok=True
@@ -191,10 +135,11 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
     }[sim_name]
 
     try:
-        logger.info("Loading ids...")
         ids = np.load(str(target_path / "ids.npy"))
-    except FileNotFoundError:
-        logger.info(" -!- Did not found ids.npy")
+        if fixed_size is not None:
+            assert len(ids) == 3*fixed_size
+        logger.info("Loaded existing ids.")
+    except (FileNotFoundError, AssertionError):
         ids = find_ids(
             base_path=str(source_path),
             hsmall=hsmall,
@@ -202,22 +147,21 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             mass_min=mass_min,
             mass_max=mass_max,
             n_gas_min=n_gas_min,
+            fixed_size=fixed_size,
         )
         np.save(str(target_path / "ids.npy"), ids)
 
     ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
 
-    if len(ids) == len(ready_halos) > 0:
+    if (fixed_size is None and len(ids) == len(ready_halos) > 0) \
+            or fixed_size is not None and 3*fixed_size == len(ids) == len(ready_halos) > 0:
         logger.info("Preprocessing is already complete.")
-        stats = np.load(str(target_path / "stats.npy"), allow_pickle=True)
+        stats = np.load(str(target_path / "stats.npy"))
     else:
+        for halo in ready_halos:
+            halo.unlink()
         logger.info(f"Preprocessing begins ({len(ids)} halos to process)...")
-        stats = dict(
-            dm_min=np.NaN,
-            dm_max=np.NaN,
-            rg_min=np.NaN,
-            rg_max=np.NaN,
-        )
+        stats = np.ndarray((len(ids), 6), dtype=float)
 
         for i, halo_id in enumerate(ids):
             dm_halo, gas_halo = find_halo(
@@ -229,8 +173,12 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             )
 
             dm_coalesced, rg_coalesced = voxelize(dm_halo, gas_halo, nvoxel=nvoxel)
-
-            stats = update_stats(stats, dm_coalesced, rg_coalesced)
+            stats[i, 0] = torch.min(dm_coalesced.values())
+            stats[i, 1] = torch.max(dm_coalesced.values())
+            stats[i, 2] = torch.sum(dm_coalesced.values())
+            stats[i, 3] = torch.min(rg_coalesced.values())
+            stats[i, 4] = torch.max(rg_coalesced.values())
+            stats[i, 5] = torch.sum(rg_coalesced.values())
 
             mode = {
                 0: "train",
@@ -246,5 +194,6 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
                 / f"halo_{halo_id}_coalesced.npy",
 
             )
-        np.save(str(target_path / "stats.npy"), stats, allow_pickle=True)
+
+        np.save(str(target_path / "stats.npy"), stats)
     return ids, stats

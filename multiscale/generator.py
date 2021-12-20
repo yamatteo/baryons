@@ -75,10 +75,10 @@ class UnetGenerator(nn.Module):
         def _init_weights_(m):
             if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d)):
                 nn.init.normal_(m.weight.data, 0.0, 0.02)
-            elif isinstance(m, nn.BatchNorm3d):
+            elif isinstance(m, (nn.BatchNorm3d,)):
                 nn.init.normal_(m.weight.data, 0.1, 0.02)
                 nn.init.constant_(m.bias.data, 0.0)
-            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Tanh, nn.Dropout, nn.Sequential, UnetSkipConnectionBlock, UnetGenerator)):
+            elif isinstance(m, (nn.LeakyReLU, nn.ReLU, nn.Tanh, nn.Dropout, nn.InstanceNorm3d, nn.Sequential, UnetSkipConnectionBlock, UnetGenerator)):
                 pass
             else:
                 raise NotImplementedError(f"How to initialize {type(m)}?")

@@ -1,4 +1,4 @@
-import logging
+import logger
 
 from options import opts
 from . import preprocess
