@@ -1,9 +1,11 @@
 # Code from https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix.git
+import logging
 
 import torch
 import torch.nn as nn
 import functools
 
+logger = logging.getLogger("baryons")
 
 class UnetGenerator(nn.Module):
     """Create a Unet-based generator.
@@ -175,3 +177,79 @@ class UnetSkipConnectionBlock(nn.Module):
             output = torch.cat([x, self.model(x)], 1)
             # print(f"{output.shape=}")
             return output
+
+
+class SUNetOutermost(nn.Module):
+    def __init__(self, input_nc, inner_nc, outer_nc, submodule):
+        super(SUNetOutermost, self).__init__()
+
+        self.model = nn.Sequential(
+            nn.Conv3d(input_nc, inner_nc, kernel_size=3, bias=False),
+            submodule,
+            nn.ReLU(True),
+            nn.ConvTranspose3d(inner_nc * 2, outer_nc, kernel_size=3, bias=False),
+            nn.Tanh()
+        )
+
+    def forward(self, x):
+        # logger.debug(f"outermost {x.shape=}")
+        output = self.model(x)
+        # logger.debug(f"outermost {output.shape=}")
+        return output
+
+class SUNetIntermediate(nn.Module):
+    def __init__(self, nc, submodule,):
+        super(SUNetIntermediate, self).__init__()
+
+        self.model = nn.Sequential(
+            nn.LeakyReLU(0.2, True),
+            nn.Conv3d(nc, nc * 2, kernel_size=3, bias=False),
+            nn.InstanceNorm3d(nc),
+            submodule,
+            nn.ReLU(True),
+            nn.ConvTranspose3d(nc * 4, nc, kernel_size=3, bias=False, ),
+            nn.InstanceNorm3d(nc),
+            nn.Dropout(0.5),
+        )
+
+    def forward(self, x):
+        # logger.debug(f"intermediate: {x.shape=}")
+        output = torch.cat([x, self.model(x)], 1)
+        # logger.debug(f"intermediate: {output.shape=}")
+        return output
+
+class SUNetInnermost(nn.Module):
+    def __init__(self, nc):
+        super(SUNetInnermost, self).__init__()
+
+        self.model = nn.Sequential(
+            nn.LeakyReLU(0.2, True),
+            nn.Conv3d(nc, nc, kernel_size=3, bias=False),
+            nn.ReLU(True),
+            nn.ConvTranspose3d(nc, nc, kernel_size=3, bias=False),
+            nn.InstanceNorm3d(nc),
+        )
+
+    def forward(self, x):
+        # logger.debug(f"innermost: {x.shape=}")
+        output = torch.cat([x, self.model(x)], 1)
+        # logger.debug(f"innermost: {output.shape=}")
+        return output
+
+class SUNet(nn.Module):
+    def __init__(self, features, levels):
+        super(SUNet, self).__init__()
+        block = SUNetInnermost(
+            nc=2 ** levels * features,
+        )
+        for lvl in reversed(range(levels)):
+            block = SUNetIntermediate(2**lvl * features, block)
+        self.model = SUNetOutermost(
+            input_nc=1,
+            inner_nc=features,
+            outer_nc=1,
+            submodule=block,
+        )
+
+    def forward(self, x):
+        return self.model(x)

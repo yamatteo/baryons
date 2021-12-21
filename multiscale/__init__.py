@@ -12,9 +12,9 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 from preprocessing import preprocess
-from .classifier import MseTrainer
+from .trainers import ClassifierTrainer, QuantifierTrainer, MseTrainer
 from .dataset import BasicDataset, LogarithmicDataset
-from .generator import UnetGenerator
+from .generators import UnetGenerator, SUNet
 from .metrics import metrics_dict
 
 logger = logging.getLogger("baryons")
@@ -87,13 +87,24 @@ class Vox2Vox:
                     1, 1, num_downs=4, use_dropout=True, norm_layer=nn.InstanceNorm3d
                 )
             )
+        elif generator == "sunet":
+            self.generator = self.tensor_type(
+                SUNet(
+                    features=opts["sunet_feat"],
+                    levels=opts["sunet_levels"],
+                )
+            )
         self.g_optimizer = torch.optim.Adam(
             self.generator.parameters(),
             lr=lr,
         )
 
-        if trainer == "mse_classifier":
-            self.trainer = MseTrainer(cuda, batch_size, lr)
+        if trainer == "classifier":
+            self.trainer = ClassifierTrainer(cuda, batch_size, lr)
+        elif trainer == "quantifier":
+            self.trainer = QuantifierTrainer(cuda, batch_size, lr)
+        elif trainer == "mse":
+            self.trainer = MseTrainer()
 
         self.writer = SummaryWriter(
             Path(run_base_path) / voxelization_name / (id if id is not None else "last_run")
@@ -252,18 +263,21 @@ class Vox2Vox:
         return evaluation
 
     def xy_distribution_sample(self):
-        i = random.randint(0, len(self.valid_dataset))
+        i = random.randint(0, len(self.valid_dataset)-1)
         halos = self.valid_dataset[i]
         dm, rg = self.tensor_type(halos["dm"]).unsqueeze(0), self.tensor_type(halos["rg"]).unsqueeze(0)
         pg = self.generator(dm)
+        relupg = torch.nn.functional.relu(pg)
 
         rg_dist = torch.sum(rg, dim=(0, 4))
         pg_dist = torch.sum(pg, dim=(0, 4))
+        relupg_dist = torch.sum(relupg, dim=(0, 4))
 
         rg_dist = rg_dist / torch.max(rg_dist)
         pg_dist = pg_dist / torch.max(pg_dist)
+        relupg_dist = relupg_dist / torch.max(relupg_dist)
 
-        self.writer.add_images("xy_dist rg--pg", torch.stack((rg_dist, pg_dist), dim=0))
+        self.writer.add_images("xy_dist rg--pg", torch.stack((rg_dist, pg_dist, relupg_dist), dim=0))
 
 
 def roundrun(rounds, opts, vv_id=None):

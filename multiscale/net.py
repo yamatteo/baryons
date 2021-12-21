@@ -10,8 +10,8 @@ import torch.nn.functional as functional
 import torch.utils.data
 
 from .dataset import BlockworkDataset
-from .generator import UnetGenerator
-from .classifier import MseClassifier
+from .generators import UnetGenerator
+from .trainers import Classifier
 from preprocessing.preprocess import preprocess
 from torch.utils.tensorboard import SummaryWriter
 

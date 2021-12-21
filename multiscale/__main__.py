@@ -68,7 +68,7 @@ multi_labels = tuple(multi_opts.keys())
 
 if len(multi_opts) == 0:
     logger.info(f" Launching single run with options:\n {pprint.pformat({key: value for (key, value) in opts.items()}, indent=4)}")
-    roundrun(opts["rounds"], opts)
+    roundrun(opts["rounds"], opts, "opts")
 else:
     logger.info(f"Launching multiple runs with base options:\n{pprint.pformat({key: value for (key, value) in simple_opts.items()}, indent=4)}")
     for i, possible_opt in enumerate(combinations):
