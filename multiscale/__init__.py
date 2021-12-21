@@ -1,6 +1,7 @@
 import datetime
 import logging
 import math
+import random
 import time
 from pathlib import Path
 
@@ -250,6 +251,20 @@ class Vox2Vox:
                 ])
         return evaluation
 
+    def xy_distribution_sample(self):
+        i = random.randint(0, len(self.valid_dataset))
+        halos = self.valid_dataset[i]
+        dm, rg = self.tensor_type(halos["dm"]).unsqueeze(0), self.tensor_type(halos["rg"]).unsqueeze(0)
+        pg = self.generator(dm)
+
+        rg_dist = torch.sum(rg, dim=(0, 4))
+        pg_dist = torch.sum(pg, dim=(0, 4))
+
+        rg_dist = rg_dist / torch.max(rg_dist)
+        pg_dist = pg_dist / torch.max(pg_dist)
+
+        self.writer.add_images("xy_dist rg--pg", torch.stack((rg_dist, pg_dist), dim=0))
+
 
 def roundrun(rounds, opts, vv_id=None):
     for r in range(rounds):
@@ -259,6 +274,7 @@ def roundrun(rounds, opts, vv_id=None):
             evaluation = torch.cat((evaluation, vv.evaluate(opts["metrics"])), dim=1)
         except NameError:
             evaluation = vv.evaluate(opts["metrics"])
+        vv.xy_distribution_sample()
 
     means = torch.mean(evaluation, dim=(0, 1))
     halo_var = torch.mean(torch.var(evaluation, dim=0, keepdim=True), dim=(0, 1))
@@ -267,4 +283,4 @@ def roundrun(rounds, opts, vv_id=None):
         logger.info(
             f"{label:>12s}: {means[i].item():.3e} (± {halo_var[i].item():.0e} across halos; ± {runs_var[i].item():.0e} across runs)")
 
-    #  TODO store some cooler stuff, like slices, videos or meshes
+    #  TODO store some cooler stuff, like radial distributions, slice-videos or meshes
