@@ -3,6 +3,7 @@ import logging
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as functional
 import functools
 
 logger = logging.getLogger("baryons")
@@ -188,7 +189,7 @@ class SUNetOutermost(nn.Module):
             submodule,
             nn.ReLU(True),
             nn.ConvTranspose3d(inner_nc * 2, outer_nc, kernel_size=3, bias=False),
-            nn.Tanh()
+            # nn.Tanh()
         )
 
     def forward(self, x):
@@ -204,7 +205,7 @@ class SUNetIntermediate(nn.Module):
         self.model = nn.Sequential(
             nn.LeakyReLU(0.2, True),
             nn.Conv3d(nc, nc * 2, kernel_size=3, bias=False),
-            nn.InstanceNorm3d(nc),
+            nn.InstanceNorm3d(nc*2),
             submodule,
             nn.ReLU(True),
             nn.ConvTranspose3d(nc * 4, nc, kernel_size=3, bias=False, ),
@@ -252,4 +253,6 @@ class SUNet(nn.Module):
         )
 
     def forward(self, x):
+        # x = torch.log(x + 1e-8)
         return self.model(x)
+

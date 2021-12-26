@@ -12,8 +12,8 @@ from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 from preprocessing import preprocess
-from .trainers import ClassifierTrainer, QuantifierTrainer, MseTrainer
-from .dataset import BasicDataset, LogarithmicDataset
+from .trainers import ClassifierTrainer, QuantifierTrainer, MseTrainer, L1Trainer
+from .dataset import BasicDataset
 from .generators import UnetGenerator, SUNet
 from .metrics import metrics_dict
 
@@ -56,6 +56,32 @@ class Vox2Vox:
         self.tensor_type = tensor_type
 
         voxelization_name = f"{sim_name}_SNAP{snap_num:03d}_MASS{mass_min:.2e}_{mass_max:.2e}_NGASMIN{n_gas_min}"
+        # if generator == "lunet":
+        #     self.dataloader = torch.utils.data.DataLoader(
+        #         LogarithmicDataset(
+        #             path=(
+        #                     Path(voxels_base_path)
+        #                     / voxelization_name
+        #                     / f"nvoxel_{nvoxel}"
+        #                     / "train"
+        #             ),
+        #             fixed_size=dataset_fixed_size,
+        #         ),
+        #         batch_size=batch_size,
+        #         shuffle=True,
+        #         num_workers=n_cpu,
+        #         drop_last=True,
+        #     )
+        #     self.valid_dataset = LogarithmicDataset(
+        #         path=(
+        #                 Path(voxels_base_path)
+        #                 / voxelization_name
+        #                 / f"nvoxel_{nvoxel}"
+        #                 / "valid"
+        #         ),
+        #         fixed_size=dataset_fixed_size,
+        #     )
+        # else:
         self.dataloader = torch.utils.data.DataLoader(
             BasicDataset(
                 path=(
@@ -94,7 +120,21 @@ class Vox2Vox:
                     levels=opts["sunet_levels"],
                 )
             )
-        self.g_optimizer = torch.optim.Adam(
+        # elif generator == "lunet":
+        #     self.generator = self.tensor_type(
+        #         LUNet(
+        #             features=opts["lunet_feat"],
+        #             levels=opts["lunet_levels"],
+        #         )
+        #     )
+        # elif generator == "alunet":
+        #     self.generator = self.tensor_type(
+        #         AluNet(
+        #             features=opts["lunet_feat"],
+        #             levels=opts["lunet_levels"],
+        #         )
+        #     )
+        self.g_optimizer = torch.optim.SGD(
             self.generator.parameters(),
             lr=lr,
         )
@@ -105,6 +145,8 @@ class Vox2Vox:
             self.trainer = QuantifierTrainer(cuda, batch_size, lr)
         elif trainer == "mse":
             self.trainer = MseTrainer()
+        elif trainer == "l1":
+            self.trainer = L1Trainer()
 
         self.writer = SummaryWriter(
             Path(run_base_path) / voxelization_name / (id if id is not None else "last_run")
@@ -241,6 +283,7 @@ class Vox2Vox:
 
                 self.g_optimizer.zero_grad()
                 pg = self.generator(dm)
+                # print(pg)
                 loss = self.trainer(dm, rg, pg)
                 loss.backward()
                 self.g_optimizer.step()

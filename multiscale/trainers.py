@@ -198,3 +198,10 @@ class MseTrainer:
 
     def __call__(self, dm, rg, pg):
         return functional.mse_loss(rg, pg)
+
+class L1Trainer:
+    def __init__(self):
+        pass
+
+    def __call__(self, dm, rg, pg):
+        return functional.l1_loss(rg, pg)
