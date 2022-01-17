@@ -41,6 +41,8 @@ class Vox2Vox:
             **opts,
     ):
         self.cuda = cuda = torch.cuda.is_available()
+        if not cuda:
+            logger.warning("Running without cuda!")
         self.run_path = Path(run_base_path)
 
         def tensor_type(x):
@@ -134,10 +136,21 @@ class Vox2Vox:
         #             levels=opts["lunet_levels"],
         #         )
         #     )
-        self.g_optimizer = torch.optim.SGD(
-            self.generator.parameters(),
-            lr=lr,
-        )
+        if opts['optimizer'] == "adabelief":
+            from adabelief_pytorch import AdaBelief
+            self.g_optimizer = AdaBelief(
+                self.generator.parameters(),
+                lr=lr,
+                eps=1e-8,
+                betas=(0.9, 0.999),
+                weight_decouple=True,
+                rectify=True,
+            )
+        else:
+            self.g_optimizer = torch.optim.SGD(
+                self.generator.parameters(),
+                lr=lr,
+            )
 
         if trainer == "classifier":
             self.trainer = ClassifierTrainer(cuda, batch_size, lr)
@@ -271,7 +284,7 @@ class Vox2Vox:
     #         self.run_path / f"sample_{epoch:03d}.npy",
     #     )
 
-    def train(self, n_epochs, sample_interval=None, checkpoint_interval=None):
+    def train(self, n_epochs, normalog=False, sample_interval=None, checkpoint_interval=None):
         logger.info(f"   training for {n_epochs} epochs...")
         self.init_time = time.time()
 
@@ -280,6 +293,9 @@ class Vox2Vox:
                 # if self.cuda:
                 #     torch.cuda.reset_peak_memory_stats()
                 dm, rg = self.tensor_type(halos["dm"]), self.tensor_type(halos["rg"])
+                if normalog:
+                    dm = torch.log(dm + 1)
+                    rg = torch.log(rg + 1)
 
                 self.g_optimizer.zero_grad()
                 pg = self.generator(dm)
@@ -290,14 +306,22 @@ class Vox2Vox:
 
                 self.writer.add_scalar("loss", loss.item(), global_step=epoch * len(self.dataloader) + i)
 
-    def evaluate(self, metrics):
+    def evaluate(self, metrics, normalog=False):
         # for i in range(len(self.valid_dataset)):
         #     print(i, self.valid_dataset[i])
         with torch.no_grad():
             evaluation = torch.zeros((len(self.valid_dataset), 1, len(metrics)))
             for i, halos in enumerate(self.valid_dataset):
                 dm, rg = self.tensor_type(halos["dm"]).unsqueeze(0), self.tensor_type(halos["rg"]).unsqueeze(0)
-                pg = self.generator(dm)
+                if normalog:
+                    dm = torch.log(dm + 1)
+                    rg = torch.log(rg + 1)
+                    pg = self.generator(dm)
+                    dm = torch.exp(dm) - 1
+                    rg = torch.exp(rg) - 1
+                    pg = torch.exp(pg) - 1
+                else:
+                    pg = self.generator(dm)
 
                 evaluation[i, 0] = torch.tensor([
                     metrics_dict[label](dm, rg, pg)
@@ -305,11 +329,19 @@ class Vox2Vox:
                 ])
         return evaluation
 
-    def xy_distribution_sample(self):
+    def xy_distribution_sample(self, normalog=False):
         i = random.randint(0, len(self.valid_dataset)-1)
         halos = self.valid_dataset[i]
         dm, rg = self.tensor_type(halos["dm"]).unsqueeze(0), self.tensor_type(halos["rg"]).unsqueeze(0)
-        pg = self.generator(dm)
+        if normalog:
+            dm = torch.log(dm + 1)
+            rg = torch.log(rg + 1)
+            pg = self.generator(dm)
+            # dm = torch.exp(dm) - 1
+            rg = torch.exp(rg) - 1
+            pg = torch.exp(pg) - 1
+        else:
+            pg = self.generator(dm)
         relupg = torch.nn.functional.relu(pg)
 
         rg_dist = torch.sum(rg, dim=(0, 4))
@@ -326,12 +358,12 @@ class Vox2Vox:
 def roundrun(rounds, opts, vv_id=None):
     for r in range(rounds):
         vv = Vox2Vox(id=vv_id + ":" + str(r) if vv_id is not None else None, **opts)
-        vv.train(n_epochs=opts["n_epochs"])
+        vv.train(n_epochs=opts["n_epochs"], normalog=opts.get("normalog", False))
         try:
-            evaluation = torch.cat((evaluation, vv.evaluate(opts["metrics"])), dim=1)
+            evaluation = torch.cat((evaluation, vv.evaluate(opts["metrics"], normalog=opts.get("normalog", False))), dim=1)
         except NameError:
-            evaluation = vv.evaluate(opts["metrics"])
-        vv.xy_distribution_sample()
+            evaluation = vv.evaluate(opts["metrics"], normalog=opts.get("normalog", False))
+        vv.xy_distribution_sample(normalog=opts.get("normalog", False))
 
     means = torch.mean(evaluation, dim=(0, 1))
     halo_var = torch.mean(torch.var(evaluation, dim=0, keepdim=True), dim=(0, 1))
