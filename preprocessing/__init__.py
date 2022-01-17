@@ -13,6 +13,7 @@ import my_utils_illustris as myil
 
 logger = logging.getLogger("baryons")
 
+
 def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min, fixed_size=None):
     logger.info(f"Finding halos in {base_path} -- snap {snap_num}...")
 
@@ -47,7 +48,7 @@ def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min, fixed_s
     if fixed_size is None:
         return np.intersect1d(ids_central, ids_within_mass)
     else:
-        return np.intersect1d(ids_central, ids_within_mass)[:3*fixed_size]
+        return np.intersect1d(ids_central, ids_within_mass)[:3 * fixed_size]
 
 
 def find_halo(base_path, halo_id, lbox, mdm, snap_num):
@@ -137,7 +138,7 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
     try:
         ids = np.load(str(target_path / "ids.npy"))
         if fixed_size is not None:
-            assert len(ids) == 3*fixed_size
+            assert len(ids) == 3 * fixed_size
         logger.info("Loaded existing ids.")
     except (FileNotFoundError, AssertionError):
         ids = find_ids(
@@ -154,14 +155,12 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
     ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
 
     if (fixed_size is None and len(ids) == len(ready_halos) > 0) \
-            or fixed_size is not None and 3*fixed_size == len(ids) == len(ready_halos) > 0:
+            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_halos) > 0:
         logger.info("Preprocessing is already complete.")
-        stats = np.load(str(target_path / "stats.npy"))
     else:
         for halo in ready_halos:
             halo.unlink()
         logger.info(f"Preprocessing begins ({len(ids)} halos to process)...")
-        stats = np.ndarray((len(ids), 6), dtype=float)
 
         for i, halo_id in enumerate(ids):
             dm_halo, gas_halo = find_halo(
@@ -173,18 +172,13 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             )
 
             dm_coalesced, rg_coalesced = voxelize(dm_halo, gas_halo, nvoxel=nvoxel)
-            stats[i, 0] = torch.min(dm_coalesced.values())
-            stats[i, 1] = torch.max(dm_coalesced.values())
-            stats[i, 2] = torch.sum(dm_coalesced.values())
-            stats[i, 3] = torch.min(rg_coalesced.values())
-            stats[i, 4] = torch.max(rg_coalesced.values())
-            stats[i, 5] = torch.sum(rg_coalesced.values())
 
             mode = {
                 0: "train",
-                1: "valid",
-                2: "test",
-            }[i % 3]
+                1: "train",
+                2: "valid",
+                3: "test",
+            }[i % 4]
 
             torch.save(
                 {"dm": dm_coalesced, "rg": rg_coalesced},
@@ -195,5 +189,21 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
 
             )
 
-        np.save(str(target_path / "stats.npy"), stats)
-    return ids, stats
+    return ids
+
+
+def assert_preprocessing(target_path, nvoxel, fixed_size=None):
+    try:
+        ids = np.load(str(target_path / "ids.npy"))
+        if fixed_size is not None:
+            assert len(ids) == 3 * fixed_size
+    except (FileNotFoundError, AssertionError):
+        return False
+
+    ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
+
+    if (fixed_size is None and len(ids) == len(ready_halos) > 0) \
+            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_halos) > 0:
+        return True
+    else:
+        return False
