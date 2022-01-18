@@ -145,6 +145,7 @@ class Vox2Vox:
                 betas=(0.9, 0.999),
                 weight_decouple=True,
                 rectify=True,
+                print_change_log=False,
             )
         else:
             self.g_optimizer = torch.optim.SGD(
@@ -337,22 +338,24 @@ class Vox2Vox:
             dm = torch.log(dm + 1)
             rg = torch.log(rg + 1)
             pg = self.generator(dm)
-            # dm = torch.exp(dm) - 1
+            dm = torch.exp(dm) - 1
             rg = torch.exp(rg) - 1
             pg = torch.exp(pg) - 1
         else:
             pg = self.generator(dm)
         relupg = torch.nn.functional.relu(pg)
 
+        dm_dist = torch.sum(dm, dim=(0, 4))
         rg_dist = torch.sum(rg, dim=(0, 4))
         pg_dist = torch.sum(pg, dim=(0, 4))
         relupg_dist = torch.sum(relupg, dim=(0, 4))
 
+        dm_dist = dm_dist / torch.max(dm_dist)
         rg_dist = rg_dist / torch.max(rg_dist)
         pg_dist = pg_dist / torch.max(pg_dist)
         relupg_dist = relupg_dist / torch.max(relupg_dist)
 
-        self.writer.add_images("xy_dist rg--pg", torch.stack((rg_dist, pg_dist, relupg_dist), dim=0))
+        self.writer.add_images("xy_dist rg--pg", torch.stack((dm_dist, rg_dist, pg_dist, relupg_dist), dim=0))
 
 
 def roundrun(rounds, opts, vv_id=None):

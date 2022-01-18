@@ -204,4 +204,4 @@ class L1Trainer:
         pass
 
     def __call__(self, dm, rg, pg):
-        return functional.l1_loss(rg, pg)
+        return functional.l1_loss(rg, pg) + functional.l1_loss(torch.mean(rg, dim=-1), torch.mean(pg, dim=-1)) + functional.l1_loss(torch.mean(rg, dim=-2), torch.mean(pg, dim=-2)) + functional.l1_loss(torch.mean(rg, dim=-3), torch.mean(pg, dim=-3))
