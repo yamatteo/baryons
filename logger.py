@@ -16,7 +16,7 @@ console.setLevel(
         "debug": logging.DEBUG,
         "info": logging.INFO,
         "warn": logging.WARN,
-    }[opts["console_log_level"]]
+    }[opts.get("console_log_level", "info")]
 )
 console.setFormatter(logging.Formatter("%(message)s"))
 logger.addHandler(console)

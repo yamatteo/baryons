@@ -10,6 +10,7 @@
 /test/
 
 
+*.env
 *.log
 *:Zone.Identifier
 last_run.csv
