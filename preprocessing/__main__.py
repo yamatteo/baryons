@@ -1,5 +1,4 @@
 from options import opts
-from dotenv import dotenv_values
 from . import preprocess
 from pathlib import Path
 import logging
@@ -13,7 +12,6 @@ console.setFormatter(logging.Formatter("%(message)s"))
 logger.addHandler(console)
 
 if __name__ == "__main__":
-    opts.update(dotenv_values(".env"))
     preprocess(
         source_path=Path(opts["simulation_base_path"]) / opts['sim_name'] / "output",
         target_path=Path(opts["preprocessing_path"]) / opts["preprocessing_name"],

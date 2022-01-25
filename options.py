@@ -1,6 +1,8 @@
-from argparse import Namespace
+from dotenv import dotenv_values
 
-opts = dict(
+opts = dotenv_values(".env")
+
+opts.update(dict(
     batch_size=40,
     checkpoint_interval=10,
     voxels_base_path="data",
@@ -40,7 +42,7 @@ opts = dict(
     nvoxel=64,
     patch_side=8,
     metrics=("mse", "l1", "totalmass"),
-)
+))
 
 opts["preprocessing_name"] = (
     f"{opts['sim_name']}"

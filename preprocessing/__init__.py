@@ -1,11 +1,5 @@
 import logging
 import numpy as np
-import os.path
-import pandas as pd
-import time
-from pathlib import Path
-import pickle
-
 import torch
 
 import illustris_python as il
@@ -171,15 +165,15 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             torch.save(
                 voxelize(dm_halo, gas_halo, nvoxel=nvoxel),
                 target_path
-                    / f"nvoxel_{nvoxel}"
-                    / mode
-                    / f"halo_{halo_id}_voxels.npy",
+                / f"nvoxel_{nvoxel}"
+                / mode
+                / f"halo_{halo_id}_voxels.npy",
             )
             np.savez(
                 target_path
-                    / f"pointclouds"
-                    / mode
-                    / f"halo_{halo_id}_pointcloud.npz",
+                / f"pointclouds"
+                / mode
+                / f"halo_{halo_id}_pointcloud.npz",
                 dm=dm_halo,
                 rg=gas_halo,
             )

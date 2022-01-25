@@ -8,33 +8,24 @@ from pathlib import Path
 import torch.cuda
 
 from options import opts
-from preprocessing import assert_preprocessing
+from preprocessing import preprocessing_is_complete
 from vox2vox import env_vars, logger, init, train, get_hash, evaluate, apply
 
 parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
-parser.add_argument("command", choices=(
-    "train",
-    "evaluate",
-    "apply",
-    "create",
-    "remove",
-    "reset",
-    "clear_reports",
-))
 # parser.add_argument("-r", "--root",              type=str,   default='/gpfswork/rech/qbf/uiu95bi/predicting_baryons/data/TNG300-1_MASS_1.00e+12_5.00e+12_MSUN/nvoxel_256/3d_on_the_fly/',   help="folder where data is")
 # parser.add_argument("--n_voxel",                 type=int,   default=256,    help="number of voxels set for images")
 # parser.add_argument("--epoch",                   type=int,   default=0,      help="epoch to start training from")
-parser.add_argument("-n", "--n_epochs", type=int)
-parser.add_argument("--console_log_level", type=str, default="info")
-parser.add_argument("--delete_previous_voxels", type=bool, default=False)
-parser.add_argument("--delete_previous_runs", type=bool, default=False)
-parser.add_argument("--preprocessing_fixed_size", type=eval, default=None)
-parser.add_argument("-b", "--batch_size", type=eval)
+# parser.add_argument("-n", "--n_epochs", type=int)
+# parser.add_argument("--console_log_level", type=str, default="info")
+# parser.add_argument("--delete_previous_voxels", type=bool, default=False)
+# parser.add_argument("--delete_previous_runs", type=bool, default=False)
+# parser.add_argument("--preprocessing_fixed_size", type=eval, default=None)
+# parser.add_argument("-b", "--batch_size", type=eval)
 # parser.add_argument("--lr",                      type=float, default=0.0002, help="adam: learning rate")
 # parser.add_argument("--b1",                      type=float, default=0.5,    help="adam: decay of first order momentum of gradient")
 # parser.add_argument("--b2",                      type=float, default=0.999,  help="adam: decay of first order momentum of gradient")
 # parser.add_argument("--decay_epoch",             type=int,   default=10,     help="epoch from which to start lr decay")
-parser.add_argument("--n_cpu", type=int, help="cpus to use in batch generation")
+# parser.add_argument("--n_cpu", type=int, help="cpus to use in batch generation")
 # parser.add_argument("--img_height",              type=int,   default=256,    help="size of image height")
 # parser.add_argument("--img_width",               type=int,   default=256,    help="size of image width")
 # parser.add_argument("--channels",                type=int,   default=1,      help="number of image channels")
