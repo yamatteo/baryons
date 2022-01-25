@@ -11,7 +11,7 @@ import torch
 import illustris_python as il
 import my_utils_illustris as myil
 
-logger = logging.getLogger("baryons")
+logger = logging.getLogger()
 
 
 def find_ids(base_path, hsmall, snap_num, mass_min, mass_max, n_gas_min, fixed_size=None):
@@ -102,19 +102,22 @@ def voxelize(dm_halo, gas_halo, nvoxel):
     dm_pos = np.floor(dm_pos * (nvoxel - 1) / maximum).astype(np.int64)
     gas_pos = np.floor(gas_pos * (nvoxel - 1) / maximum).astype(np.int64)
 
-    dm_coalesced = torch.sparse_coo_tensor(
+    dm = torch.sparse_coo_tensor(
         indices=dm_pos.T, values=dm_mass, size=(nvoxel, nvoxel, nvoxel)
-    ).coalesce()
-    gas_coalesced = torch.sparse_coo_tensor(
+    ).coalesce().to_dense().unsqueeze(0)
+    rg = torch.sparse_coo_tensor(
         indices=gas_pos.T, values=gas_mass, size=(nvoxel, nvoxel, nvoxel)
-    ).coalesce()
+    ).coalesce().to_dense().unsqueeze(0)
 
-    return dm_coalesced, gas_coalesced
+    return dm, rg
 
 
 def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max, nvoxel, n_gas_min, fixed_size=None):
     for mode in ("train", "valid", "test"):
         (target_path / f"nvoxel_{nvoxel}" / mode).mkdir(
+            parents=True, exist_ok=True
+        )
+        (target_path / f"pointclouds" / mode).mkdir(
             parents=True, exist_ok=True
         )
 
@@ -135,12 +138,9 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
         "TNG100-3": 3.2e8 / hsmall,
     }[sim_name]
 
-    try:
-        ids = np.load(str(target_path / "ids.npy"))
-        if fixed_size is not None:
-            assert len(ids) == 3 * fixed_size
-        logger.info("Loaded existing ids.")
-    except (FileNotFoundError, AssertionError):
+    if preprocessing_is_complete(target_path, nvoxel, fixed_size):
+        logger.info(f"Preprocessing is already complete ({str(target_path)}).")
+    else:
         ids = find_ids(
             base_path=str(source_path),
             hsmall=hsmall,
@@ -151,17 +151,7 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             fixed_size=fixed_size,
         )
         np.save(str(target_path / "ids.npy"), ids)
-
-    ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
-
-    if (fixed_size is None and len(ids) == len(ready_halos) > 0) \
-            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_halos) > 0:
-        logger.info("Preprocessing is already complete.")
-    else:
-        for halo in ready_halos:
-            halo.unlink()
-        logger.info(f"Preprocessing begins ({len(ids)} halos to process)...")
-
+        logger.info(f"Found {len(ids)} halos. Processing...")
         for i, halo_id in enumerate(ids):
             dm_halo, gas_halo = find_halo(
                 base_path=str(source_path),
@@ -171,8 +161,6 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
                 snap_num=snap_num,
             )
 
-            dm_coalesced, rg_coalesced = voxelize(dm_halo, gas_halo, nvoxel=nvoxel)
-
             mode = {
                 0: "train",
                 1: "train",
@@ -181,25 +169,23 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             }[i % 4]
 
             torch.save(
-                {"dm": dm_coalesced, "rg": rg_coalesced},
+                voxelize(dm_halo, gas_halo, nvoxel=nvoxel),
                 target_path
-                / f"nvoxel_{nvoxel}"
-                / mode
-                / f"halo_{halo_id}_coalesced.npy",
+                    / f"nvoxel_{nvoxel}"
+                    / mode
+                    / f"halo_{halo_id}_voxels.npy",
             )
             np.savez(
                 target_path
-                / f"nvoxel_{nvoxel}"
-                / mode
-                / f"halo_{halo_id}_dense.npz",
-                dm=dm_coalesced.to_dense().numpy(),
-                rg=rg_coalesced.to_dense().numpy(),
+                    / f"pointclouds"
+                    / mode
+                    / f"halo_{halo_id}_pointcloud.npz",
+                dm=dm_halo,
+                rg=gas_halo,
             )
 
-    return ids
 
-
-def assert_preprocessing(target_path, nvoxel, fixed_size=None):
+def preprocessing_is_complete(target_path, nvoxel, fixed_size=None):
     try:
         ids = np.load(str(target_path / "ids.npy"))
         if fixed_size is not None:
@@ -207,10 +193,11 @@ def assert_preprocessing(target_path, nvoxel, fixed_size=None):
     except (FileNotFoundError, AssertionError):
         return False
 
-    ready_halos = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_coalesced.npy"))
+    ready_voxels = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_voxels.npy"))
+    ready_clouds = list((target_path / f"pointclouds").glob("*/halo_*_pointcloud.npz"))
 
-    if (fixed_size is None and len(ids) == len(ready_halos) > 0) \
-            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_halos) > 0:
+    if (fixed_size is None and len(ids) == len(ready_clouds) == len(ready_voxels) > 0) \
+            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_clouds) == len(ready_voxels) > 0:
         return True
     else:
         return False
