@@ -9,7 +9,7 @@ import torch.cuda
 
 from options import opts
 from preprocessing import assert_preprocessing
-from vox2vox import init, train, get_hash, evaluate, apply
+from vox2vox import env_vars, logger, init, train, get_hash, evaluate, apply
 
 parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
 parser.add_argument("command", choices=(
@@ -42,12 +42,13 @@ parser.add_argument("--n_cpu", type=int, help="cpus to use in batch generation")
 # parser.add_argument("--checkpoint_interval",     type=int,   default=50,     help="interval between model checkpoints")
 # parser.add_argument("-e", "--evaluate", dest='evaluate', action='store_true', help="evaluates model if present")
 # parser.add_argument("--use_adabelief", dest='use_adabelief', action='store_true', help="whether to use AdaBelief instead of Adam")
+opts.update(env_vars)
 opts.update(vars(parser.parse_args()))
 
 if "cuda" not in opts.keys():
     opts["cuda"] = torch.cuda.is_available()
 
-from logger import logger
+# from logger import logger
 logger.info(f'Found GPU: {opts["cuda"]}')
 
 # Ensure paths

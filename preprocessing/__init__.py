@@ -186,7 +186,14 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
                 / f"nvoxel_{nvoxel}"
                 / mode
                 / f"halo_{halo_id}_coalesced.npy",
-
+            )
+            np.savez(
+                target_path
+                / f"nvoxel_{nvoxel}"
+                / mode
+                / f"halo_{halo_id}_dense.npz",
+                dm=dm_coalesced.to_dense().numpy(),
+                rg=rg_coalesced.to_dense().numpy(),
             )
 
     return ids

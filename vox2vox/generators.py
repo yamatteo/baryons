@@ -14,8 +14,8 @@ def upward_layer(in_channels, out_channels):
     return nn.Sequential(
         nn.ConvTranspose3d(in_channels, out_channels, kernel_size=3, bias=False),
         nn.ReLU(True),
-        nn.Conv3d(out_channels, out_channels, kernel_size=1),
-        nn.ReLU(True),
+        # nn.Conv3d(out_channels, out_channels, kernel_size=1),
+        # nn.ReLU(True),
         # nn.Dropout(p=0.1),
         nn.BatchNorm3d(out_channels),
     )
@@ -88,7 +88,7 @@ class SUNetInnermost(nn.Module):
 
 
 class SUNet(nn.Module):
-    def __init__(self, features, levels):
+    def __init__(self, features, levels, channels=1):
         super(SUNet, self).__init__()
         block = SUNetInnermost(
             nc=2 ** levels * features,
@@ -96,7 +96,7 @@ class SUNet(nn.Module):
         for lvl in reversed(range(levels)):
             block = SUNetIntermediate(2 ** lvl * features, block)
         self.model = SUNetOutermost(
-            input_nc=1,
+            input_nc=channels,
             inner_nc=features,
             outer_nc=1,
             submodule=block,
