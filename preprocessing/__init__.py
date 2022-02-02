@@ -115,7 +115,7 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
             parents=True, exist_ok=True
         )
 
-    if not (source_path / f"groups_{snap_num:03d}").exists():
+    if not (source_path / f"snapdir_{snap_num:03d}").exists():
         raise IOError(
             f"Snapshot {snap_num} of simulation {sim_name} doesn't seem to be in {source_path}."
         )
