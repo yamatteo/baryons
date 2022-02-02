@@ -13,7 +13,7 @@ logger.addHandler(console)
 
 if __name__ == "__main__":
     preprocess(
-        source_path=Path(opts["simulation_base_path"]) / opts['sim_name'] / "output",
+        source_path=Path(opts["raw_data_path"]) / opts['sim_name'] / "output",
         target_path=Path(opts["preprocessing_path"]) / opts["preprocessing_name"],
         sim_name=opts['sim_name'],
         snap_num=opts['snap_num'],
@@ -21,4 +21,5 @@ if __name__ == "__main__":
         mass_max=opts['mass_max'],
         nvoxel=opts['nvoxel'],
         n_gas_min=opts['n_gas_min'],
+        fixed_size=opts.get("fixed_size", None),
     )

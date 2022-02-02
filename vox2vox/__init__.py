@@ -3,30 +3,27 @@ import logging
 import math
 import os.path
 import random
-import shutil
 import time
-from datetime import datetime
-import dotenv
 import torch
 from pathlib import Path
 
 from adabelief_pytorch import AdaBelief
+from torch import nn
 from torch.nn import functional
 from torch.utils.tensorboard import SummaryWriter
 
-from vox2vox.dataset import BasicDataset
+from vox2vox.dataset import Dataset
 from vox2vox.generators import SUNet
 
-# from logger import logger
 from vox2vox.metrics import metrics_dict
 from vox2vox.trainers import L1ProjectionsTrainer, L1SumTrainer
 
-env_vars = dotenv.dotenv_values(".env")
+from options import opts
+
 
 logging.getLogger("matplotlib.font_manager").disabled = True
 logging.getLogger("parso.python.diff").disabled = True
 
-run_path = Path(env_vars["output_path"])
 
 logger = logging.getLogger("baryons")
 logger.setLevel(logging.DEBUG)
@@ -36,16 +33,31 @@ console.setLevel(logging.INFO)
 console.setFormatter(logging.Formatter("%(message)s"))
 logger.addHandler(console)
 
-logfile = logging.FileHandler(filename=run_path / "last_run.log", mode="w")
-logfile.setLevel(logging.DEBUG)
-logfile.setFormatter(logging.Formatter("%(asctime)s: %(message)s"))
-logger.addHandler(logfile)
+
+def right_to(x):
+    return x.to(device="cuda" if opts["cuda"] else "cpu", dtype=torch.float)
 
 
-def write_images(tag, data, writer, projection=-1):
+
+
+
+
+
+
+def write_images(tag, data, writer, projection=-1, global_step=None):
     data = [
         [
-            torch.sum(torch.relu(box.squeeze(0)), dim=projection)
+            torch.sum(
+                torch.cat(
+                    [
+                        torch.abs(box),
+                        torch.relu(box),
+                        torch.relu(box),
+                    ],
+                    dim=1,
+                ),
+                dim=projection
+            )
             for box in row
         ]
         for row in data
@@ -55,83 +67,67 @@ def write_images(tag, data, writer, projection=-1):
         for row in data for square in row
     ]
     data = [ torch.log(20*square + 1) / math.log(21) for square in data ]
-    print([ torch.max(square) for square in data ])
-    writer.add_images(tag, torch.stack(data, dim=0))
+    # print([ torch.max(square) for square in data ])
+    writer.add_images(tag, torch.cat(data, dim=0), global_step=global_step)
 
 class Vox2Vox:
     def __init__(
             self,
-            id=None,
             **opts,
     ):
-        self.id = id
-        self.path = Path(opts["models_base_path"]) / id
+        self.opts = opts
 
         def right_to(x):
             return x.to(device="cuda" if opts["cuda"] else "cpu", dtype=torch.float)
 
         self.right_to = right_to
 
-        if opts["mod_main_generator"] == "sunet":
-            self.main_generator = self.right_to(
+        self.generator = self.right_to(
                 SUNet(
                     features=opts["mod_main_features"],
                     levels=opts["mod_main_levels"],
                 )
             )
-        else:
-            raise ValueError(f"Option {opts['mod_main_generator']=} is invalid.")
 
-        if opts["mod_patch_generator"] == "sunet":
-            self.patch_generator = self.right_to(
-                SUNet(
-                    channels=2,
-                    features=opts["mod_patch_features"],
-                    levels=opts["mod_patch_levels"],
-                )
-            )
-        else:
-            raise ValueError(f"Option {opts['mod_patch_generator']=} is invalid.")
-
-    def initialize(self):
-        self.main_generator.initialize()
-        self.patch_generator.initialize()
-
-    def save(self):
-        os.makedirs(self.path, exist_ok=True)
-        torch.save(
-            self.main_generator.state_dict(),
-            self.path / f"main_generator.pth",
-        )
-        torch.save(
-            self.patch_generator.state_dict(),
-            self.path / f"patch_generator.pth",
-        )
-
-    def load(self):
-        self.main_generator.load_state_dict(torch.load(
-            self.path / f"main_generator.pth"
-        ))
-        self.patch_generator.load_state_dict(torch.load(
-            self.path / f"patch_generator.pth"
-        ))
-        return self
-
-    def deg_step(self, dm, rg, opts, writer=None):
-        degdm = functional.avg_pool3d(dm, kernel_size=4)
-        degrg = functional.avg_pool3d(rg, kernel_size=4)
-        degpg = self.main_generator(degdm)
-        if writer:
-            write_images("deg step", [[degdm], [degrg, degpg]], writer)
-        return degdm, degrg, degpg
-
-    def patch_step(self, dm_patch, rg_patch, badpg_patch, opts, writer=None):
-        # degdm = functional.avg_pool3d(dm, kernel_size=4)
-        # degrg = functional.avg_pool3d(rg, kernel_size=4)
-        betterpg_patch = self.patch_generator(torch.cat([dm_patch, badpg_patch], dim=1))
-        if writer:
-            write_images("patch step", [[dm_patch], [badpg_patch], [betterpg_patch], [rg_patch]], writer)
-        return betterpg_patch
+    # def initialize(self):
+    #     self.main_generator.initialize()
+    #     self.patch_generator.initialize()
+    #
+    # def save(self):
+    #     os.makedirs(self.path, exist_ok=True)
+    #     torch.save(
+    #         self.main_generator.state_dict(),
+    #         self.path / f"main_generator.pth",
+    #     )
+    #     torch.save(
+    #         self.patch_generator.state_dict(),
+    #         self.path / f"patch_generator.pth",
+    #     )
+    #
+    # def load(self):
+    #     self.main_generator.load_state_dict(torch.load(
+    #         self.path / f"main_generator.pth"
+    #     ))
+    #     self.patch_generator.load_state_dict(torch.load(
+    #         self.path / f"patch_generator.pth"
+    #     ))
+    #     return self
+    #
+    # def deg_step(self, dm, rg, opts, writer=None):
+    #     degdm = functional.avg_pool3d(dm, kernel_size=4)
+    #     degrg = functional.avg_pool3d(rg, kernel_size=4)
+    #     degpg = self.main_generator(degdm)
+    #     if writer:
+    #         write_images("deg step", [[degdm], [degrg, degpg]], writer)
+    #     return degdm, degrg, degpg
+    #
+    # def patch_step(self, dm_patch, rg_patch, badpg_patch, opts, writer=None):
+    #     # degdm = functional.avg_pool3d(dm, kernel_size=4)
+    #     # degrg = functional.avg_pool3d(rg, kernel_size=4)
+    #     betterpg_patch = self.patch_generator(torch.cat([dm_patch, badpg_patch], dim=1))
+    #     if writer:
+    #         write_images("patch step", [[dm_patch], [badpg_patch], [betterpg_patch], [rg_patch]], writer)
+    #     return betterpg_patch
 
 
 def init(model_id, opts):

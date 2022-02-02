@@ -1,6 +1,28 @@
 import torch
 from torch import nn
 
+def downsample_layer(inch, outch, padding_value):
+    return nn.Sequential(
+        nn.ConstantPad3d(1, value=padding_value),
+        nn.Conv3d(inch, outch, kernel_size=4, stride=2),
+        nn.LeakyReLU(True),
+        nn.Conv3d(outch, outch, kernel_size=1, stride=1),
+        nn.LeakyReLU(True),
+        nn.Dropout3d(p=0.1),
+        nn.BatchNorm3d(outch),
+    )
+
+def upsample_layer(inch, outch):
+    return nn.Sequential(
+        nn.ConvTranspose3d(inch, outch, kernel_size=4, stride=2, padding=1),
+        nn.ReLU(True),
+        nn.Conv3d(outch, outch, kernel_size=1, stride=1),
+        nn.ReLU(True),
+        # nn.Dropout3d(p=0.1),
+        nn.BatchNorm3d(outch),
+    )
+
+
 
 def down_layer(in_channels, out_channels):
     return nn.Sequential(
@@ -90,21 +112,29 @@ class SUNetInnermost(nn.Module):
 class SUNet(nn.Module):
     def __init__(self, features, levels, channels=1):
         super(SUNet, self).__init__()
-        block = SUNetInnermost(
-            nc=2 ** levels * features,
-        )
-        for lvl in reversed(range(levels)):
-            block = SUNetIntermediate(2 ** lvl * features, block)
-        self.model = SUNetOutermost(
-            input_nc=channels,
-            inner_nc=features,
-            outer_nc=1,
-            submodule=block,
-        )
+        # block = SUNetInnermost(
+        #     nc=2 ** levels * features,
+        # )
+        # for lvl in reversed(range(levels)):
+        #     block = SUNetIntermediate(2 ** lvl * features, block)
+        # self.model = SUNetOutermost(
+        #     input_nc=channels,
+        #     inner_nc=features,
+        #     outer_nc=1,
+        #     submodule=block,
+        # )
+        self.downsample = downsample_layer(1, 4, 0)
+        self.upsample = upsample_layer(4, 4)
+        self.final = nn.Conv3d(5, 1, kernel_size=1)
 
     def forward(self, x):
         # x = torch.log(x + 1e-8)
-        return self.model(x)
+        print(f"{x.shape=}")
+
+        y = self.upsample(self.downsample(x))
+        print(f"{y.shape=}")
+        return self.final(torch.cat([x, self.upsample(self.downsample(x))], dim=1))
+        # return self.model(x)
 
     def initialize(self):
         def _init_weights_(m):
