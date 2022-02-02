@@ -129,7 +129,8 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
     mdm = {
         "TNG300-1": 4e7 / hsmall,
         "TNG100-1": 5.1e6 / hsmall,
-        "TNG100-3": 3.2e8 / hsmall,
+        "TNG100-3": 3.23e8 / hsmall,
+        "TNG50-1": 307367.708626464 / hsmall,
     }[sim_name]
 
     if preprocessing_is_complete(target_path, nvoxel, fixed_size):
