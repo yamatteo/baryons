@@ -4,7 +4,7 @@ import torch
 
 import illustris_python as il
 import my_utils_illustris as myil
-
+from tqdm import tqdm
 logger = logging.getLogger()
 
 
@@ -147,37 +147,40 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
         )
         np.save(str(target_path / "ids.npy"), ids)
         logger.info(f"Found {len(ids)} halos. Processing...")
-        for i, halo_id in enumerate(ids):
-            dm_halo, gas_halo = find_halo(
-                base_path=str(source_path),
-                halo_id=halo_id,
-                lbox=lbox,
-                mdm=mdm,
-                snap_num=snap_num,
-            )
-
+        for i, halo_id in tqdm(list(enumerate(ids))):
             mode = {
                 0: "train",
                 1: "train",
                 2: "valid",
                 3: "test",
             }[i % 4]
+            filepath = target_path / f"nvoxel_{nvoxel}" / mode / f"halo_{halo_id}_voxels.npy"
+            if filepath.exists():
+                continue
+            else:
+                dm_halo, gas_halo = find_halo(
+                    base_path=str(source_path),
+                    halo_id=halo_id,
+                    lbox=lbox,
+                    mdm=mdm,
+                    snap_num=snap_num,
+                )
 
-            torch.save(
-                voxelize(dm_halo, gas_halo, nvoxel=nvoxel),
-                target_path
-                / f"nvoxel_{nvoxel}"
-                / mode
-                / f"halo_{halo_id}_voxels.npy",
-            )
-            # np.savez(
-            #     target_path
-            #     / f"pointclouds"
-            #     / mode
-            #     / f"halo_{halo_id}_pointcloud.npz",
-            #     dm=dm_halo,
-            #     rg=gas_halo,
-            # )
+                torch.save(
+                    voxelize(dm_halo, gas_halo, nvoxel=nvoxel),
+                    target_path
+                    / f"nvoxel_{nvoxel}"
+                    / mode
+                    / f"halo_{halo_id}_voxels.npy",
+                )
+                # np.savez(
+                #     target_path
+                #     / f"pointclouds"
+                #     / mode
+                #     / f"halo_{halo_id}_pointcloud.npz",
+                #     dm=dm_halo,
+                #     rg=gas_halo,
+                # )
 
 
 def preprocessing_is_complete(target_path, nvoxel, fixed_size=None):
