@@ -111,9 +111,9 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
         (target_path / f"nvoxel_{nvoxel}" / mode).mkdir(
             parents=True, exist_ok=True
         )
-        (target_path / f"pointclouds" / mode).mkdir(
-            parents=True, exist_ok=True
-        )
+        # (target_path / f"pointclouds" / mode).mkdir(
+        #     parents=True, exist_ok=True
+        # )
 
     if not (source_path / f"snapdir_{snap_num:03d}").exists():
         raise IOError(
@@ -170,14 +170,14 @@ def preprocess(source_path, target_path, sim_name, snap_num, mass_min, mass_max,
                 / mode
                 / f"halo_{halo_id}_voxels.npy",
             )
-            np.savez(
-                target_path
-                / f"pointclouds"
-                / mode
-                / f"halo_{halo_id}_pointcloud.npz",
-                dm=dm_halo,
-                rg=gas_halo,
-            )
+            # np.savez(
+            #     target_path
+            #     / f"pointclouds"
+            #     / mode
+            #     / f"halo_{halo_id}_pointcloud.npz",
+            #     dm=dm_halo,
+            #     rg=gas_halo,
+            # )
 
 
 def preprocessing_is_complete(target_path, nvoxel, fixed_size=None):
@@ -189,10 +189,16 @@ def preprocessing_is_complete(target_path, nvoxel, fixed_size=None):
         return False
 
     ready_voxels = list((target_path / f"nvoxel_{nvoxel}").glob("*/halo_*_voxels.npy"))
-    ready_clouds = list((target_path / f"pointclouds").glob("*/halo_*_pointcloud.npz"))
+    # ready_clouds = list((target_path / f"pointclouds").glob("*/halo_*_pointcloud.npz"))
 
-    if (fixed_size is None and len(ids) == len(ready_clouds) == len(ready_voxels) > 0) \
-            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_clouds) == len(ready_voxels) > 0:
+    if (fixed_size is None and len(ids) == len(ready_voxels) > 0) \
+            or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_voxels) > 0:
         return True
     else:
         return False
+
+    # if (fixed_size is None and len(ids) == len(ready_clouds) == len(ready_voxels) > 0) \
+    #         or fixed_size is not None and 3 * fixed_size == len(ids) == len(ready_clouds) == len(ready_voxels) > 0:
+    #     return True
+    # else:
+    #     return False
